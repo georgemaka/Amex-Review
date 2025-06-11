@@ -1,0 +1,5 @@
+# Windows-specific requirements for Outlook automation
+# Install with: pip install -r requirements-windows.txt
+# This is optional - the application will work without it using SMTP
+
+pywin32==306
