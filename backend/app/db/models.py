@@ -127,7 +127,7 @@ class Statement(Base):
     # Relationships
     cardholder_statements = relationship("CardholderStatement", back_populates="statement", cascade="all, delete-orphan")
     created_by = relationship("User", foreign_keys=[created_by_id])
-    analytics = relationship("SpendingAnalytics", cascade="all, delete-orphan")
+    analytics = relationship("SpendingAnalytics", cascade="all, delete-orphan", overlaps="statement")
 
 
 class CardholderStatement(Base):
@@ -297,7 +297,7 @@ class SpendingAnalytics(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships
-    statement = relationship("Statement")
+    statement = relationship("Statement", overlaps="analytics")
     cardholder = relationship("Cardholder")
     category = relationship("SpendingCategory", back_populates="spending_analytics")
 

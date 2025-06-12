@@ -12,7 +12,11 @@
       "Bash(docker compose:*)",
       "Bash(curl:*)",
       "Bash(python3:*)",
-      "Bash(alembic revision:*)"
+      "Bash(alembic revision:*)",
+      "Bash(grep:*)",
+      "Bash(awk:*)",
+      "Bash(sed:*)",
+      "Bash(cp:*)"
     ],
     "deny": []
   }

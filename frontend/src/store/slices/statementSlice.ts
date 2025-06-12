@@ -94,7 +94,7 @@ export const deleteStatement = createAsyncThunk(
   'statements/deleteStatement',
   async (id: number) => {
     const response = await api.deleteStatement(id);
-    return { id, ...response };
+    return id; // Just return the id directly
   }
 );
 
@@ -159,8 +159,8 @@ const statementSlice = createSlice({
       })
       .addCase(deleteStatement.fulfilled, (state, action) => {
         state.isLoading = false;
-        state.statements = state.statements.filter(s => s.id !== action.payload.id);
-        if (state.currentStatement?.id === action.payload.id) {
+        state.statements = state.statements.filter(s => s.id !== action.payload);
+        if (state.currentStatement?.id === action.payload) {
           state.currentStatement = null;
         }
       })

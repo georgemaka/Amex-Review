@@ -25,7 +25,7 @@ function App() {
   useEffect(() => {
     // Configure API service with auth handlers
     api.setAuthHandlers(
-      () => token,
+      () => token || localStorage.getItem('token'),
       () => dispatch(logout())
     );
     

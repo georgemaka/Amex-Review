@@ -322,34 +322,6 @@ class ApiService {
     return response.data;
   }
 
-  // Export transactions as CSV
-  async exportTransactionsCSV(cardholderStatementIds: number[], reviewedOnly: boolean = false): Promise<Blob> {
-    const params = new URLSearchParams();
-    cardholderStatementIds.forEach(id => params.append('cardholder_statement_ids', id.toString()));
-    params.append('reviewed_only', reviewedOnly.toString());
-    
-    const response = await this.api.get(`/transactions/export?${params}`, {
-      responseType: 'blob'
-    });
-    return response.data;
-  }
-
-  // Get single statement details
-  async getStatement(id: number): Promise<any> {
-    const response = await this.api.get(`/statements/${id}`);
-    return response.data;
-  }
-
-  // Get statement progress
-  async getStatementProgress(id: number): Promise<any> {
-    const response = await this.api.get(`/statements/${id}/progress`);
-    return response.data;
-  }
-
-  // Send statement emails
-  async sendStatementEmails(id: number): Promise<void> {
-    await this.api.post(`/statements/${id}/send-emails`);
-  }
 }
 
 export default new ApiService();

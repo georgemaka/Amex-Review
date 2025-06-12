@@ -34,7 +34,7 @@ import {
 import { format } from 'date-fns';
 import { RootState, AppDispatch } from '../../store';
 import { fetchStatements, deleteStatement } from '../../store/slices/statementSlice';
-import { showNotification } from '../../store/slices/uiSlice';
+import { addNotification } from '../../store/slices/uiSlice';
 
 const StatementList: React.FC = () => {
   const navigate = useNavigate();
@@ -88,18 +88,44 @@ const StatementList: React.FC = () => {
 
   const handleDeleteConfirm = async () => {
     if (statementToDelete) {
+      console.log('=== DELETE DEBUG START ===');
+      console.log('Statement ID:', statementToDelete);
+      console.log('User:', user);
+      console.log('User role:', user?.role);
+      console.log('Token from Redux state:', localStorage.getItem('token'));
+      
       try {
-        await dispatch(deleteStatement(statementToDelete)).unwrap();
-        dispatch(showNotification({
+        const result = await dispatch(deleteStatement(statementToDelete)).unwrap();
+        console.log('Delete successful, result:', result);
+        dispatch(addNotification({
           message: 'Statement deleted successfully',
-          severity: 'success',
+          type: 'success',
         }));
-        // Refresh the list
+        // Refresh the statements list
         dispatch(fetchStatements({ skip: page * rowsPerPage, limit: rowsPerPage }));
-      } catch (error) {
-        dispatch(showNotification({
-          message: 'Failed to delete statement',
-          severity: 'error',
+      } catch (error: any) {
+        console.error('=== DELETE FAILED ===');
+        console.error('Error type:', error.name);
+        console.error('Error message:', error.message);
+        console.error('Full error object:', error);
+        
+        // Extract specific error message if available
+        let errorMessage = 'Failed to delete statement';
+        if (error.response?.data?.detail) {
+          errorMessage = error.response.data.detail;
+        } else if (error.response?.status === 401) {
+          errorMessage = 'Authentication failed. Please log in again.';
+        } else if (error.response?.status === 403) {
+          errorMessage = 'You do not have permission to delete statements.';
+        } else if (error.response?.status === 404) {
+          errorMessage = 'Statement not found.';
+        } else if (error.response?.status === 500) {
+          errorMessage = 'Server error. Please check the backend logs.';
+        }
+        
+        dispatch(addNotification({
+          message: errorMessage,
+          type: 'error',
         }));
       }
     }
