@@ -162,6 +162,7 @@ class Transaction(Base):
     description = Column(Text, nullable=False)
     amount = Column(Float, nullable=False)
     merchant_name = Column(String(255), nullable=True)
+    category_id = Column(Integer, ForeignKey("spending_categories.id"), nullable=True)
     
     # Coding fields
     gl_account = Column(String(20), nullable=True)
@@ -188,6 +189,7 @@ class Transaction(Base):
     cardholder_statement = relationship("CardholderStatement", back_populates="transactions")
     coded_by = relationship("User", foreign_keys=[coded_by_id], back_populates="coded_transactions")
     reviewed_by = relationship("User", foreign_keys=[reviewed_by_id], back_populates="reviewed_transactions")
+    category = relationship("SpendingCategory", back_populates="transactions")
 
 
 class CodingSuggestion(Base):
@@ -218,3 +220,106 @@ class EmailLog(Base):
     sent_at = Column(DateTime(timezone=True), server_default=func.now())
     error_message = Column(Text, nullable=True)
     is_successful = Column(Boolean, default=True)
+
+
+class SpendingCategory(Base):
+    __tablename__ = "spending_categories"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), unique=True, nullable=False, index=True)
+    description = Column(String(255), nullable=True)
+    color = Column(String(7), nullable=True)  # Hex color code
+    icon = Column(String(50), nullable=True)  # Material icon name
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    merchant_mappings = relationship("MerchantMapping", back_populates="category")
+    transactions = relationship("Transaction", back_populates="category")
+    spending_analytics = relationship("SpendingAnalytics", back_populates="category")
+    budget_limits = relationship("BudgetLimit", back_populates="category")
+    spending_alerts = relationship("SpendingAlert", back_populates="category")
+
+
+class MerchantMapping(Base):
+    __tablename__ = "merchant_mappings"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    merchant_pattern = Column(String(255), nullable=False, index=True)
+    category_id = Column(Integer, ForeignKey("spending_categories.id"), nullable=False)
+    confidence = Column(Float, default=1.0)
+    is_regex = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    category = relationship("SpendingCategory", back_populates="merchant_mappings")
+
+
+class BudgetLimit(Base):
+    __tablename__ = "budget_limits"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    cardholder_id = Column(Integer, ForeignKey("cardholders.id"), nullable=True)
+    category_id = Column(Integer, ForeignKey("spending_categories.id"), nullable=True)
+    month = Column(Integer, nullable=True)
+    year = Column(Integer, nullable=True)
+    limit_amount = Column(Float, nullable=False)
+    alert_threshold = Column(Float, default=0.8)  # Alert at 80% by default
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    cardholder = relationship("Cardholder")
+    category = relationship("SpendingCategory", back_populates="budget_limits")
+
+
+class SpendingAnalytics(Base):
+    __tablename__ = "spending_analytics"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    statement_id = Column(Integer, ForeignKey("statements.id"), nullable=True)
+    cardholder_id = Column(Integer, ForeignKey("cardholders.id"), nullable=True)
+    category_id = Column(Integer, ForeignKey("spending_categories.id"), nullable=True)
+    period_month = Column(Integer, nullable=False)
+    period_year = Column(Integer, nullable=False)
+    total_amount = Column(Float, nullable=False)
+    transaction_count = Column(Integer, nullable=False)
+    average_transaction = Column(Float, nullable=False)
+    max_transaction = Column(Float, nullable=True)
+    min_transaction = Column(Float, nullable=True)
+    merchant_count = Column(Integer, nullable=True)
+    top_merchants = Column(JSON, nullable=True)  # List of {merchant, amount, count}
+    daily_breakdown = Column(JSON, nullable=True)  # Daily spending data
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    statement = relationship("Statement")
+    cardholder = relationship("Cardholder")
+    category = relationship("SpendingCategory", back_populates="spending_analytics")
+
+
+class SpendingAlert(Base):
+    __tablename__ = "spending_alerts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    alert_type = Column(String(50), nullable=False)  # budget_exceeded, unusual_spending, etc.
+    severity = Column(String(20), nullable=False)  # info, warning, critical
+    cardholder_id = Column(Integer, ForeignKey("cardholders.id"), nullable=True)
+    category_id = Column(Integer, ForeignKey("spending_categories.id"), nullable=True)
+    transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=True)
+    amount = Column(Float, nullable=True)
+    threshold = Column(Float, nullable=True)
+    description = Column(Text, nullable=False)
+    is_resolved = Column(Boolean, default=False)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    resolved_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    cardholder = relationship("Cardholder")
+    category = relationship("SpendingCategory", back_populates="spending_alerts")
+    transaction = relationship("Transaction")
+    resolved_by = relationship("User")

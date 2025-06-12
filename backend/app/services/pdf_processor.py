@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 
 class PDFProcessor:
     def __init__(self):
-        self.cardholder_pattern = re.compile(r"Total for (.+?)\s+\$[\d,]+\.\d{2}")
+        # Updated pattern to handle cases with no space before dollar amount or text after name
+        self.cardholder_pattern = re.compile(r"Total for (.+?)(?:New Charges|Previous Balance|\$|$)", re.IGNORECASE)
         self.closing_date_pattern = re.compile(r"Closing Date:\s*(\d{2}/\d{2}/\d{4})")
         self.skip_names = ["J BEHRENS FIELD 2"]
     

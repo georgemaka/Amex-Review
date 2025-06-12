@@ -29,6 +29,9 @@ AsyncSessionLocal = sessionmaker(
     expire_on_commit=False
 )
 
+# Create async session context for use in sync code
+async_session = AsyncSessionLocal
+
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,

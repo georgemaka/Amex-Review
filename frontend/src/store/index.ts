@@ -4,6 +4,8 @@ import statementReducer from './slices/statementSlice';
 import transactionReducer from './slices/transactionSlice';
 import cardholderReducer from './slices/cardholderSlice';
 import uiReducer from './slices/uiSlice';
+import analyticsReducer from './slices/analyticsSlice';
+import budgetReducer from './slices/budgetSlice';
 
 export const store = configureStore({
   reducer: {
@@ -12,6 +14,8 @@ export const store = configureStore({
     transactions: transactionReducer,
     cardholders: cardholderReducer,
     ui: uiReducer,
+    analytics: analyticsReducer,
+    budgets: budgetReducer,
   },
 });
 

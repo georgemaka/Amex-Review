@@ -201,6 +201,98 @@ class ApiService {
     return response.data;
   }
 
+  // Analytics endpoints
+  async getAnalyticsDashboard(params?: {
+    month?: number;
+    year?: number;
+    cardholder_id?: number;
+  }) {
+    const response = await this.api.get('/analytics/dashboard', { params });
+    return response.data;
+  }
+
+  async getSpendingByCategory(params?: {
+    month?: number;
+    year?: number;
+    cardholder_id?: number;
+  }) {
+    const response = await this.api.get('/analytics/spending-by-category', { params });
+    return response.data;
+  }
+
+  async getSpendingByMerchant(params?: {
+    month?: number;
+    year?: number;
+    cardholder_id?: number;
+    category_id?: number;
+    limit?: number;
+  }) {
+    const response = await this.api.get('/analytics/spending-by-merchant', { params });
+    return response.data;
+  }
+
+  async getSpendingTrends(params?: {
+    cardholder_id?: number;
+    category_id?: number;
+    months?: number;
+  }) {
+    const response = await this.api.get('/analytics/spending-trends', { params });
+    return response.data;
+  }
+
+  async getSpendingByCardholder(params?: {
+    month?: number;
+    year?: number;
+  }) {
+    const response = await this.api.get('/analytics/spending-by-cardholder', { params });
+    return response.data;
+  }
+
+  async getSpendingAlerts(params?: {
+    cardholder_id?: number;
+    is_resolved?: boolean;
+    severity?: string;
+    limit?: number;
+  }) {
+    const response = await this.api.get('/analytics/alerts', { params });
+    return response.data;
+  }
+
+  async resolveSpendingAlert(alertId: number) {
+    const response = await this.api.put(`/analytics/alerts/${alertId}/resolve`);
+    return response.data;
+  }
+
+  async getSpendingCategories(is_active = true) {
+    const response = await this.api.get('/analytics/categories', { params: { is_active } });
+    return response.data;
+  }
+
+  // Budget endpoints
+  async getBudgetLimits(params?: {
+    cardholder_id?: number;
+    category_id?: number;
+    is_active?: boolean;
+  }) {
+    const response = await this.api.get('/analytics/budgets', { params });
+    return response.data;
+  }
+
+  async createBudgetLimit(data: any) {
+    const response = await this.api.post('/analytics/budgets', data);
+    return response.data;
+  }
+
+  async updateBudgetLimit(id: number, data: any) {
+    const response = await this.api.put(`/analytics/budgets/${id}`, data);
+    return response.data;
+  }
+
+  async deleteBudgetLimit(id: number) {
+    const response = await this.api.delete(`/analytics/budgets/${id}`);
+    return response.data;
+  }
+
   async createCardholderAssignment(cardholderId: number, data: any) {
     const response = await this.api.post(`/cardholders/${cardholderId}/assignments`, data);
     return response.data;
@@ -223,6 +315,35 @@ class ApiService {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
     return response.data;
+  }
+
+  // Export transactions as CSV
+  async exportTransactionsCSV(cardholderStatementIds: number[], reviewedOnly: boolean = false): Promise<Blob> {
+    const params = new URLSearchParams();
+    cardholderStatementIds.forEach(id => params.append('cardholder_statement_ids', id.toString()));
+    params.append('reviewed_only', reviewedOnly.toString());
+    
+    const response = await this.api.get(`/transactions/export?${params}`, {
+      responseType: 'blob'
+    });
+    return response.data;
+  }
+
+  // Get single statement details
+  async getStatement(id: number): Promise<any> {
+    const response = await this.api.get(`/statements/${id}`);
+    return response.data;
+  }
+
+  // Get statement progress
+  async getStatementProgress(id: number): Promise<any> {
+    const response = await this.api.get(`/statements/${id}/progress`);
+    return response.data;
+  }
+
+  // Send statement emails
+  async sendStatementEmails(id: number): Promise<void> {
+    await this.api.post(`/statements/${id}/send-emails`);
   }
 }
 

@@ -8,7 +8,11 @@
       "Bash(find:*)",
       "Bash(rg:*)",
       "Bash(npm ls:*)",
-      "Bash(true)"
+      "Bash(true)",
+      "Bash(docker compose:*)",
+      "Bash(curl:*)",
+      "Bash(python3:*)",
+      "Bash(alembic revision:*)"
     ],
     "deny": []
   }

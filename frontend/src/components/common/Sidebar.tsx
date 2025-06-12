@@ -20,6 +20,7 @@ import {
   People,
   CreditCard,
   AdminPanelSettings,
+  Analytics,
 } from '@mui/icons-material';
 import { RootState } from '../../store';
 
@@ -59,6 +60,12 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onDrawerToggle }) => {
       icon: <Code />,
       path: '/coding',
       roles: ['admin', 'coder'],
+    },
+    {
+      text: 'Analytics',
+      icon: <Analytics />,
+      path: '/analytics',
+      roles: ['admin', 'coder', 'reviewer', 'viewer'],
     },
   ];
 

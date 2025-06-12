@@ -17,6 +17,27 @@ class ExcelProcessor:
         self.starting_row = 15  # Data starts at row 15
         self.jcco = "1"  # Job Cost Company
         self.record_type = "3"  # Type for APLB records
+        
+        # Column mappings for AMEX Excel format
+        self.COLS = {
+            'basic_last_name': 2,
+            'basic_first_name': 3,
+            'basic_card_number': 7,
+            'supp_last_name': 11,
+            'supp_first_name': 12,
+            'supp_card_number': 13,
+            'control_account_name': 14,
+            'control_account_number': 15,
+            'business_process_date': 16,
+            'transaction_date': 17,
+            'transaction_reference': 18,
+            'amount': 19,
+            'description_1': 20,  # Primary description/merchant
+            'description_2': 21,
+            'description_3': 22,
+            'description_4': 23,
+            'description_5': 24
+        }
     
     def parse_statement(self, excel_path: str) -> Dict[str, List[Dict]]:
         """
@@ -32,25 +53,57 @@ class ExcelProcessor:
             
             # Process rows starting from row 15
             for row_num in range(self.starting_row, sheet.max_row + 1):
-                # Extract data from columns
-                first_name = self._clean_value(sheet.cell(row=row_num, column=1).value)
-                last_name = self._clean_value(sheet.cell(row=row_num, column=2).value)
+                # Check if this row has transaction data
+                amount_value = sheet.cell(row=row_num, column=self.COLS['amount']).value
+                if amount_value is None:
+                    continue
+                
+                # Determine cardholder name - use supplemental if available, otherwise basic
+                supp_first = self._clean_value(sheet.cell(row=row_num, column=self.COLS['supp_first_name']).value)
+                supp_last = self._clean_value(sheet.cell(row=row_num, column=self.COLS['supp_last_name']).value)
+                basic_first = self._clean_value(sheet.cell(row=row_num, column=self.COLS['basic_first_name']).value)
+                basic_last = self._clean_value(sheet.cell(row=row_num, column=self.COLS['basic_last_name']).value)
+                
+                # Use supplemental cardholder if present, otherwise use basic
+                if supp_first and supp_last:
+                    first_name = supp_first.upper()
+                    last_name = supp_last.upper()
+                    card_number = self._clean_value(sheet.cell(row=row_num, column=self.COLS['supp_card_number']).value)
+                else:
+                    first_name = basic_first.upper() if basic_first else ""
+                    last_name = basic_last.upper() if basic_last else ""
+                    card_number = self._clean_value(sheet.cell(row=row_num, column=self.COLS['basic_card_number']).value)
                 
                 if not first_name or not last_name:
                     continue
                 
                 # Build cardholder name
-                cardholder_name = f"{first_name} {last_name}".upper()
+                cardholder_name = f"{first_name} {last_name}"
+                
+                # Extract description/merchant from multiple columns
+                desc_parts = []
+                for i in range(1, 6):
+                    desc_col = f'description_{i}'
+                    if desc_col in self.COLS:
+                        desc_val = self._clean_value(sheet.cell(row=row_num, column=self.COLS[desc_col]).value)
+                        if desc_val:
+                            desc_parts.append(desc_val)
+                
+                # Primary description is usually the merchant name
+                merchant_name = desc_parts[0] if desc_parts else ""
+                full_description = " | ".join(desc_parts)
                 
                 # Extract transaction data
                 transaction = {
-                    "first_name": first_name.upper(),
-                    "last_name": last_name.upper(),
-                    "amount": self._clean_amount(sheet.cell(row=row_num, column=7).value),
-                    "transaction_date": self._clean_date(sheet.cell(row=row_num, column=3).value),
-                    "posting_date": self._clean_date(sheet.cell(row=row_num, column=4).value),
-                    "description": self._clean_value(sheet.cell(row=row_num, column=5).value),
-                    "merchant": self._clean_value(sheet.cell(row=row_num, column=6).value),
+                    "first_name": first_name,
+                    "last_name": last_name,
+                    "card_number": card_number,
+                    "amount": self._clean_amount(amount_value),
+                    "transaction_date": self._clean_date(sheet.cell(row=row_num, column=self.COLS['transaction_date']).value),
+                    "posting_date": self._clean_date(sheet.cell(row=row_num, column=self.COLS['business_process_date']).value),
+                    "merchant": merchant_name,
+                    "description": full_description,
+                    "reference_number": self._clean_value(sheet.cell(row=row_num, column=self.COLS['transaction_reference']).value),
                     "row_number": row_num
                 }
                 

@@ -10,10 +10,12 @@ import Login from './components/auth/Login';
 import Dashboard from './components/dashboard/Dashboard';
 import StatementList from './components/statements/StatementList';
 import StatementUpload from './components/statements/StatementUpload';
+import StatementDetail from './components/statements/StatementDetail';
 import CodingInterface from './components/coding/CodingInterface';
 import UserManagement from './components/admin/UserManagement';
 import CardholderManagement from './components/admin/CardholderManagement';
 import NotificationSnackbar from './components/common/NotificationSnackbar';
+import AnalyticsDashboard from './components/analytics/AnalyticsDashboard';
 import api from './services/api';
 
 function App() {
@@ -50,7 +52,9 @@ function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/statements" element={<StatementList />} />
             <Route path="/statements/upload" element={<StatementUpload />} />
+            <Route path="/statements/:id" element={<StatementDetail />} />
             <Route path="/coding/:statementId" element={<CodingInterface />} />
+            <Route path="/analytics" element={<AnalyticsDashboard />} />
             <Route path="/admin/users" element={<UserManagement />} />
             <Route path="/admin/cardholders" element={<CardholderManagement />} />
           </Route>

@@ -1,0 +1,380 @@
+import re
+import logging
+from typing import Dict, List, Optional, Tuple
+from datetime import datetime, timedelta
+from collections import defaultdict
+from sqlalchemy import select, func, and_, or_
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.db.models import (
+    Transaction, SpendingCategory, MerchantMapping, SpendingAnalytics,
+    SpendingAlert, BudgetLimit, CardholderStatement, Cardholder
+)
+
+logger = logging.getLogger(__name__)
+
+
+class AnalyticsProcessor:
+    def __init__(self, db: AsyncSession):
+        self.db = db
+        self._category_cache = {}
+        self._mapping_cache = {}
+        
+    async def _load_categories(self):
+        """Load categories into cache."""
+        if not self._category_cache:
+            result = await self.db.execute(
+                select(SpendingCategory).where(SpendingCategory.is_active == True)
+            )
+            categories = result.scalars().all()
+            self._category_cache = {cat.id: cat for cat in categories}
+            
+    async def _load_mappings(self):
+        """Load merchant mappings into cache."""
+        if not self._mapping_cache:
+            result = await self.db.execute(
+                select(MerchantMapping).options(selectinload(MerchantMapping.category))
+            )
+            mappings = result.scalars().all()
+            self._mapping_cache = mappings
+    
+    async def categorize_transaction(self, transaction: Transaction) -> Optional[int]:
+        """
+        Categorize a transaction based on merchant name and description.
+        Returns category_id if found, None otherwise.
+        """
+        await self._load_mappings()
+        
+        # Combine merchant name and description for matching
+        search_text = f"{transaction.merchant_name or ''} {transaction.description}".upper()
+        
+        best_match = None
+        best_confidence = 0.0
+        
+        for mapping in self._mapping_cache:
+            pattern = mapping.merchant_pattern.upper()
+            match_found = False
+            
+            if mapping.is_regex:
+                # Use regex matching
+                try:
+                    if re.search(pattern, search_text):
+                        match_found = True
+                except re.error:
+                    logger.error(f"Invalid regex pattern: {pattern}")
+            else:
+                # Simple substring matching
+                if pattern in search_text:
+                    match_found = True
+            
+            if match_found and mapping.confidence > best_confidence:
+                best_match = mapping
+                best_confidence = mapping.confidence
+        
+        if best_match:
+            return best_match.category_id
+        
+        # Default to "Other" category if no match
+        await self._load_categories()
+        for cat_id, category in self._category_cache.items():
+            if category.name == "Other":
+                return cat_id
+        
+        return None
+    
+    async def categorize_transactions_bulk(self, transactions: List[Transaction]):
+        """Categorize multiple transactions at once."""
+        for transaction in transactions:
+            if not transaction.category_id:
+                category_id = await self.categorize_transaction(transaction)
+                if category_id:
+                    transaction.category_id = category_id
+        
+        await self.db.commit()
+    
+    async def calculate_analytics(self, statement_id: int):
+        """Calculate and store analytics for a statement."""
+        # Get all transactions for the statement
+        result = await self.db.execute(
+            select(Transaction)
+            .join(CardholderStatement)
+            .where(CardholderStatement.statement_id == statement_id)
+            .options(selectinload(Transaction.cardholder_statement))
+        )
+        transactions = result.scalars().all()
+        
+        if not transactions:
+            return
+        
+        # Get statement month/year from first transaction
+        first_trans = transactions[0]
+        month = first_trans.transaction_date.month
+        year = first_trans.transaction_date.year
+        
+        # Group transactions by cardholder and category
+        analytics_data = defaultdict(lambda: {
+            'transactions': [],
+            'merchants': set(),
+            'daily_amounts': defaultdict(float)
+        })
+        
+        for trans in transactions:
+            cardholder_id = trans.cardholder_statement.cardholder_id
+            category_id = trans.category_id or 0  # 0 for uncategorized
+            
+            key = (cardholder_id, category_id)
+            analytics_data[key]['transactions'].append(trans)
+            analytics_data[key]['merchants'].add(trans.merchant_name)
+            
+            # Track daily spending
+            day = trans.transaction_date.day
+            analytics_data[key]['daily_amounts'][day] += trans.amount
+        
+        # Create analytics records
+        for (cardholder_id, category_id), data in analytics_data.items():
+            transactions_list = data['transactions']
+            amounts = [t.amount for t in transactions_list]
+            
+            # Calculate top merchants
+            merchant_spending = defaultdict(lambda: {'amount': 0, 'count': 0})
+            for trans in transactions_list:
+                merchant_spending[trans.merchant_name]['amount'] += trans.amount
+                merchant_spending[trans.merchant_name]['count'] += 1
+            
+            top_merchants = sorted(
+                [{'merchant': m, **v} for m, v in merchant_spending.items()],
+                key=lambda x: x['amount'],
+                reverse=True
+            )[:5]
+            
+            # Create analytics record
+            analytics = SpendingAnalytics(
+                statement_id=statement_id,
+                cardholder_id=cardholder_id,
+                category_id=category_id if category_id > 0 else None,
+                period_month=month,
+                period_year=year,
+                total_amount=sum(amounts),
+                transaction_count=len(transactions_list),
+                average_transaction=sum(amounts) / len(amounts),
+                max_transaction=max(amounts),
+                min_transaction=min(amounts),
+                merchant_count=len(data['merchants']),
+                top_merchants=top_merchants,
+                daily_breakdown=dict(data['daily_amounts'])
+            )
+            self.db.add(analytics)
+        
+        await self.db.commit()
+    
+    async def detect_anomalies(self, statement_id: int):
+        """Detect spending anomalies and create alerts."""
+        # Get current period analytics
+        result = await self.db.execute(
+            select(SpendingAnalytics)
+            .where(SpendingAnalytics.statement_id == statement_id)
+            .options(
+                selectinload(SpendingAnalytics.cardholder),
+                selectinload(SpendingAnalytics.category)
+            )
+        )
+        current_analytics = result.scalars().all()
+        
+        alerts = []
+        
+        for analytics in current_analytics:
+            # Get historical average for comparison
+            hist_result = await self.db.execute(
+                select(func.avg(SpendingAnalytics.total_amount))
+                .where(
+                    and_(
+                        SpendingAnalytics.cardholder_id == analytics.cardholder_id,
+                        SpendingAnalytics.category_id == analytics.category_id,
+                        SpendingAnalytics.statement_id != statement_id,
+                        SpendingAnalytics.period_year >= analytics.period_year - 1
+                    )
+                )
+            )
+            historical_avg = hist_result.scalar() or analytics.total_amount
+            
+            # Check for unusual spending (>50% increase)
+            if analytics.total_amount > historical_avg * 1.5:
+                alert = SpendingAlert(
+                    alert_type="unusual_spending",
+                    severity="warning",
+                    cardholder_id=analytics.cardholder_id,
+                    category_id=analytics.category_id,
+                    amount=analytics.total_amount,
+                    threshold=historical_avg * 1.5,
+                    description=f"Spending in {analytics.category.name if analytics.category else 'Uncategorized'} "
+                               f"is {(analytics.total_amount / historical_avg - 1) * 100:.0f}% higher than average"
+                )
+                alerts.append(alert)
+                self.db.add(alert)
+            
+            # Check budget limits
+            budget_result = await self.db.execute(
+                select(BudgetLimit)
+                .where(
+                    and_(
+                        BudgetLimit.is_active == True,
+                        or_(
+                            and_(
+                                BudgetLimit.cardholder_id == analytics.cardholder_id,
+                                BudgetLimit.category_id == analytics.category_id
+                            ),
+                            and_(
+                                BudgetLimit.cardholder_id == analytics.cardholder_id,
+                                BudgetLimit.category_id.is_(None)
+                            ),
+                            and_(
+                                BudgetLimit.cardholder_id.is_(None),
+                                BudgetLimit.category_id == analytics.category_id
+                            )
+                        )
+                    )
+                )
+            )
+            budgets = budget_result.scalars().all()
+            
+            for budget in budgets:
+                if analytics.total_amount > budget.limit_amount:
+                    alert = SpendingAlert(
+                        alert_type="budget_exceeded",
+                        severity="critical",
+                        cardholder_id=analytics.cardholder_id,
+                        category_id=analytics.category_id,
+                        amount=analytics.total_amount,
+                        threshold=budget.limit_amount,
+                        description=f"Budget limit exceeded by ${analytics.total_amount - budget.limit_amount:.2f}"
+                    )
+                    alerts.append(alert)
+                    self.db.add(alert)
+                elif analytics.total_amount > budget.limit_amount * budget.alert_threshold:
+                    alert = SpendingAlert(
+                        alert_type="budget_warning",
+                        severity="info",
+                        cardholder_id=analytics.cardholder_id,
+                        category_id=analytics.category_id,
+                        amount=analytics.total_amount,
+                        threshold=budget.limit_amount * budget.alert_threshold,
+                        description=f"Spending at {(analytics.total_amount / budget.limit_amount * 100):.0f}% of budget"
+                    )
+                    alerts.append(alert)
+                    self.db.add(alert)
+        
+        await self.db.commit()
+        return alerts
+    
+    async def get_spending_trends(
+        self,
+        cardholder_id: Optional[int] = None,
+        category_id: Optional[int] = None,
+        months: int = 12
+    ) -> List[Dict]:
+        """Get spending trends over time."""
+        # Build query filters
+        filters = []
+        if cardholder_id:
+            filters.append(SpendingAnalytics.cardholder_id == cardholder_id)
+        if category_id:
+            filters.append(SpendingAnalytics.category_id == category_id)
+        
+        # Add date filter
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=months * 30)
+        
+        # Get analytics data
+        result = await self.db.execute(
+            select(
+                SpendingAnalytics.period_year,
+                SpendingAnalytics.period_month,
+                func.sum(SpendingAnalytics.total_amount).label('total'),
+                func.sum(SpendingAnalytics.transaction_count).label('count')
+            )
+            .where(and_(*filters) if filters else True)
+            .group_by(SpendingAnalytics.period_year, SpendingAnalytics.period_month)
+            .order_by(SpendingAnalytics.period_year, SpendingAnalytics.period_month)
+        )
+        
+        trends = []
+        for row in result:
+            trends.append({
+                'date': datetime(row.period_year, row.period_month, 1),
+                'amount': float(row.total),
+                'transaction_count': row.count
+            })
+        
+        return trends
+    
+    async def get_top_merchants(
+        self,
+        cardholder_id: Optional[int] = None,
+        category_id: Optional[int] = None,
+        limit: int = 10
+    ) -> List[Dict]:
+        """Get top merchants by spending."""
+        # Build query filters
+        filters = []
+        if cardholder_id:
+            filters.append(Transaction.cardholder_statement.has(cardholder_id=cardholder_id))
+        if category_id:
+            filters.append(Transaction.category_id == category_id)
+        
+        # Get merchant spending
+        result = await self.db.execute(
+            select(
+                Transaction.merchant_name,
+                func.sum(Transaction.amount).label('total_amount'),
+                func.count(Transaction.id).label('transaction_count'),
+                func.avg(Transaction.amount).label('avg_amount')
+            )
+            .where(and_(*filters) if filters else True)
+            .group_by(Transaction.merchant_name)
+            .order_by(func.sum(Transaction.amount).desc())
+            .limit(limit)
+        )
+        
+        merchants = []
+        for row in result:
+            merchants.append({
+                'merchant_name': row.merchant_name,
+                'total_amount': float(row.total_amount),
+                'transaction_count': row.transaction_count,
+                'average_amount': float(row.avg_amount)
+            })
+        
+        return merchants
+    
+    async def process_statement_analytics(self, statement_id: int):
+        """Main method to process all analytics for a statement."""
+        try:
+            logger.info(f"Processing analytics for statement {statement_id}")
+            
+            # Get all transactions for categorization
+            result = await self.db.execute(
+                select(Transaction)
+                .join(CardholderStatement)
+                .where(CardholderStatement.statement_id == statement_id)
+            )
+            transactions = result.scalars().all()
+            
+            # Categorize transactions
+            logger.info(f"Categorizing {len(transactions)} transactions")
+            await self.categorize_transactions_bulk(transactions)
+            
+            # Calculate analytics
+            logger.info("Calculating spending analytics")
+            await self.calculate_analytics(statement_id)
+            
+            # Detect anomalies
+            logger.info("Detecting spending anomalies")
+            alerts = await self.detect_anomalies(statement_id)
+            logger.info(f"Created {len(alerts)} alerts")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error processing analytics for statement {statement_id}: {str(e)}")
+            raise

@@ -62,7 +62,7 @@ const CodingInterface: React.FC = () => {
 
   const currentTransaction = transactions[currentTransactionIndex];
   const cardholderProgress = currentProgress?.cardholder_progress.find(
-    cp => cp.cardholder_id === selectedCardholder
+    (cp: any) => cp.cardholder_statement_id === selectedCardholder
   );
 
   if (!currentProgress) {
@@ -95,8 +95,8 @@ const CodingInterface: React.FC = () => {
                 <MenuItem value="">
                   <em>Choose a cardholder</em>
                 </MenuItem>
-                {currentProgress.cardholder_progress.map((cp) => (
-                  <MenuItem key={cp.cardholder_id} value={cp.cardholder_id}>
+                {currentProgress.cardholder_progress.map((cp: any) => (
+                  <MenuItem key={cp.cardholder_statement_id} value={cp.cardholder_statement_id}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
                       <span>{cp.cardholder_name}</span>
                       <Chip
@@ -136,7 +136,7 @@ const CodingInterface: React.FC = () => {
             {/* PDF Viewer */}
             <Box sx={{ height: '100%', overflow: 'auto', bgcolor: 'grey.100' }}>
               <PDFViewer
-                pdfUrl={`/api/v1/cardholders/${selectedCardholder}/pdf`}
+                pdfUrl={`/api/v1/statements/${statementId}/cardholder/${cardholderProgress?.cardholder_id}/pdf`}
                 currentPage={1} // This would be calculated based on transaction
               />
             </Box>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { Formik, Form } from 'formik';
@@ -17,7 +17,7 @@ import {
   MenuItem,
   Select,
 } from '@mui/material';
-import { CloudUpload, Cancel } from '@mui/icons-material';
+import { CloudUpload, Cancel, Description, InsertDriveFile } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -49,6 +49,120 @@ interface FormValues {
   pdfFile: File | null;
   excelFile: File | null;
 }
+
+interface FileDropZoneProps {
+  file: File | null;
+  accept: string;
+  onFileSelect: (file: File) => void;
+  error?: string;
+  fileType: 'PDF' | 'Excel';
+}
+
+const FileDropZone: React.FC<FileDropZoneProps> = ({ file, accept, onFileSelect, error, fileType }) => {
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    const acceptedExtensions = accept.split(',').map(ext => ext.trim());
+    
+    const validFile = files.find(file => {
+      const fileExtension = `.${file.name.split('.').pop()?.toLowerCase()}`;
+      return acceptedExtensions.includes(fileExtension);
+    });
+
+    if (validFile) {
+      onFileSelect(validFile);
+    }
+  }, [accept, onFileSelect]);
+
+  return (
+    <Box
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      sx={{
+        border: 2,
+        borderStyle: 'dashed',
+        borderColor: isDragging ? 'primary.main' : error ? 'error.main' : 'divider',
+        borderRadius: 1,
+        p: 3,
+        textAlign: 'center',
+        backgroundColor: isDragging ? 'action.hover' : 'background.paper',
+        cursor: 'pointer',
+        transition: 'all 0.2s ease',
+        '&:hover': {
+          borderColor: 'primary.main',
+          backgroundColor: 'action.hover',
+        },
+      }}
+    >
+      <input
+        type="file"
+        id={`file-input-${fileType}`}
+        hidden
+        accept={accept}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) onFileSelect(file);
+        }}
+      />
+      <label htmlFor={`file-input-${fileType}`} style={{ cursor: 'pointer' }}>
+        {file ? (
+          <Box>
+            {fileType === 'PDF' ? (
+              <Description sx={{ fontSize: 48, color: 'error.main', mb: 1 }} />
+            ) : (
+              <InsertDriveFile sx={{ fontSize: 48, color: 'success.main', mb: 1 }} />
+            )}
+            <Typography variant="body1" fontWeight="medium">
+              {file.name}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {(file.size / 1024 / 1024).toFixed(2)} MB
+            </Typography>
+          </Box>
+        ) : (
+          <Box>
+            <CloudUpload sx={{ fontSize: 48, color: 'action.disabled', mb: 1 }} />
+            <Typography variant="body1" gutterBottom>
+              Drag and drop your {fileType} file here
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              or click to browse
+            </Typography>
+          </Box>
+        )}
+      </label>
+      {error && (
+        <Typography color="error" variant="caption" display="block" mt={1}>
+          {error}
+        </Typography>
+      )}
+    </Box>
+  );
+};
 
 const StatementUpload: React.FC = () => {
   const navigate = useNavigate();
@@ -169,29 +283,13 @@ const StatementUpload: React.FC = () => {
                       <Typography variant="subtitle1" gutterBottom>
                         PDF Statement File
                       </Typography>
-                      <Button
-                        variant="outlined"
-                        component="label"
-                        fullWidth
-                        startIcon={<CloudUpload />}
-                        sx={{ py: 2 }}
-                      >
-                        {values.pdfFile ? values.pdfFile.name : 'Choose PDF File'}
-                        <input
-                          type="file"
-                          hidden
-                          accept=".pdf"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) setFieldValue('pdfFile', file);
-                          }}
-                        />
-                      </Button>
-                      {touched.pdfFile && errors.pdfFile && (
-                        <Typography color="error" variant="caption">
-                          {errors.pdfFile}
-                        </Typography>
-                      )}
+                      <FileDropZone
+                        file={values.pdfFile}
+                        accept=".pdf"
+                        onFileSelect={(file) => setFieldValue('pdfFile', file)}
+                        error={touched.pdfFile && errors.pdfFile ? String(errors.pdfFile) : undefined}
+                        fileType="PDF"
+                      />
                     </Box>
                   </Grid>
 
@@ -200,29 +298,13 @@ const StatementUpload: React.FC = () => {
                       <Typography variant="subtitle1" gutterBottom>
                         Excel Statement File
                       </Typography>
-                      <Button
-                        variant="outlined"
-                        component="label"
-                        fullWidth
-                        startIcon={<CloudUpload />}
-                        sx={{ py: 2 }}
-                      >
-                        {values.excelFile ? values.excelFile.name : 'Choose Excel File'}
-                        <input
-                          type="file"
-                          hidden
-                          accept=".xlsx,.xls"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0];
-                            if (file) setFieldValue('excelFile', file);
-                          }}
-                        />
-                      </Button>
-                      {touched.excelFile && errors.excelFile && (
-                        <Typography color="error" variant="caption">
-                          {errors.excelFile}
-                        </Typography>
-                      )}
+                      <FileDropZone
+                        file={values.excelFile}
+                        accept=".xlsx,.xls"
+                        onFileSelect={(file) => setFieldValue('excelFile', file)}
+                        error={touched.excelFile && errors.excelFile ? String(errors.excelFile) : undefined}
+                        fileType="Excel"
+                      />
                     </Box>
                   </Grid>
 

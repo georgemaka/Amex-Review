@@ -262,3 +262,163 @@ class Login(BaseModel):
 class CSVExportRequest(BaseModel):
     cardholder_statement_ids: List[int]
     include_uncoded: bool = False
+
+
+# Analytics Schemas
+class SpendingCategoryBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    color: Optional[str] = None
+    icon: Optional[str] = None
+    is_active: bool = True
+
+
+class SpendingCategoryCreate(SpendingCategoryBase):
+    pass
+
+
+class SpendingCategory(SpendingCategoryBase):
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime]
+    
+    class Config:
+        from_attributes = True
+
+
+class MerchantMappingBase(BaseModel):
+    merchant_pattern: str
+    category_id: int
+    confidence: float = 1.0
+    is_regex: bool = False
+
+
+class MerchantMappingCreate(MerchantMappingBase):
+    pass
+
+
+class MerchantMapping(MerchantMappingBase):
+    id: int
+    category: Optional[SpendingCategory] = None
+    created_at: datetime
+    updated_at: Optional[datetime]
+    
+    class Config:
+        from_attributes = True
+
+
+class BudgetLimitBase(BaseModel):
+    cardholder_id: Optional[int] = None
+    category_id: Optional[int] = None
+    month: Optional[int] = None
+    year: Optional[int] = None
+    limit_amount: float
+    alert_threshold: float = 0.8
+    is_active: bool = True
+
+
+class BudgetLimitCreate(BudgetLimitBase):
+    pass
+
+
+class BudgetLimit(BudgetLimitBase):
+    id: int
+    created_at: datetime
+    updated_at: Optional[datetime]
+    
+    class Config:
+        from_attributes = True
+
+
+class SpendingAnalyticsBase(BaseModel):
+    statement_id: Optional[int] = None
+    cardholder_id: Optional[int] = None
+    category_id: Optional[int] = None
+    period_month: int
+    period_year: int
+    total_amount: float
+    transaction_count: int
+    average_transaction: float
+    max_transaction: Optional[float] = None
+    min_transaction: Optional[float] = None
+    merchant_count: Optional[int] = None
+    top_merchants: Optional[List[dict]] = None
+    daily_breakdown: Optional[dict] = None
+
+
+class SpendingAnalytics(SpendingAnalyticsBase):
+    id: int
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+class SpendingAlertBase(BaseModel):
+    alert_type: str
+    severity: str
+    cardholder_id: Optional[int] = None
+    category_id: Optional[int] = None
+    transaction_id: Optional[int] = None
+    amount: Optional[float] = None
+    threshold: Optional[float] = None
+    description: str
+
+
+class SpendingAlertCreate(SpendingAlertBase):
+    pass
+
+
+class SpendingAlert(SpendingAlertBase):
+    id: int
+    is_resolved: bool
+    resolved_at: Optional[datetime] = None
+    resolved_by_id: Optional[int] = None
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+# Analytics Dashboard Response Models
+class CategorySpending(BaseModel):
+    category_id: int
+    category_name: str
+    category_color: str
+    total_amount: float
+    transaction_count: int
+    percentage: float
+
+
+class MerchantSpending(BaseModel):
+    merchant_name: str
+    total_amount: float
+    transaction_count: int
+    average_amount: float
+    category_name: Optional[str] = None
+
+
+class SpendingTrend(BaseModel):
+    date: datetime
+    amount: float
+    transaction_count: int
+
+
+class CardholderSpending(BaseModel):
+    cardholder_id: int
+    cardholder_name: str
+    total_amount: float
+    transaction_count: int
+    top_category: Optional[str] = None
+    trend: str  # up, down, stable
+
+
+class AnalyticsDashboard(BaseModel):
+    total_spending: float
+    total_transactions: int
+    average_transaction: float
+    top_categories: List[CategorySpending]
+    top_merchants: List[MerchantSpending]
+    spending_trend: List[SpendingTrend]
+    recent_alerts: List[SpendingAlert]
+    period_comparison: dict  # Current vs previous period

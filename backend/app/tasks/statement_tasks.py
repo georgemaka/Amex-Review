@@ -14,6 +14,7 @@ from app.db.models import (
 )
 from app.services.pdf_processor import PDFProcessor
 from app.services.excel_processor import ExcelProcessor
+from app.services.analytics_processor import AnalyticsProcessor
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -120,6 +121,13 @@ def process_statement_task(self, statement_id: int) -> Dict:
             
             # Create transaction records
             for trans_data in transactions:
+                # Convert datetime objects to strings for JSON serialization
+                json_safe_data = trans_data.copy()
+                if isinstance(json_safe_data.get("transaction_date"), datetime):
+                    json_safe_data["transaction_date"] = json_safe_data["transaction_date"].isoformat()
+                if isinstance(json_safe_data.get("posting_date"), datetime):
+                    json_safe_data["posting_date"] = json_safe_data["posting_date"].isoformat()
+                
                 transaction = Transaction(
                     cardholder_statement_id=cardholder_statement.id,
                     transaction_date=trans_data["transaction_date"],
@@ -128,7 +136,7 @@ def process_statement_task(self, statement_id: int) -> Dict:
                     amount=trans_data["amount"],
                     merchant_name=trans_data["merchant"],
                     status=TransactionStatus.UNCODED,
-                    original_row_data=trans_data
+                    original_row_data=json_safe_data
                 )
                 db.add(transaction)
             
@@ -139,6 +147,38 @@ def process_statement_task(self, statement_id: int) -> Dict:
         statement.status = StatementStatus.SPLIT
         statement.processing_completed_at = datetime.utcnow()
         db.commit()
+        
+        # Update progress before analytics
+        self.update_state(
+            state="PROGRESS",
+            meta={
+                "current": 90,
+                "total": 100,
+                "status": "Processing analytics",
+                "cardholders": total_cardholders,
+                "transactions": total_transactions
+            }
+        )
+        
+        # Process analytics
+        try:
+            from sqlalchemy.ext.asyncio import AsyncSession
+            from app.db.session import async_session
+            
+            # Create async session for analytics processor
+            async def process_analytics():
+                async with async_session() as async_db:
+                    analytics_processor = AnalyticsProcessor(async_db)
+                    await analytics_processor.process_statement_analytics(statement_id)
+            
+            # Run async function
+            import asyncio
+            asyncio.run(process_analytics())
+            
+            logger.info(f"Analytics processed for statement {statement_id}")
+        except Exception as e:
+            logger.error(f"Error processing analytics: {str(e)}")
+            # Don't fail the whole process if analytics fail
         
         # Final progress update
         self.update_state(

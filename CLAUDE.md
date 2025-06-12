@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-AMEX Coding Portal - A full-stack web application for coding American Express corporate card transactions. Built with FastAPI backend, React/TypeScript frontend, PostgreSQL database, and Celery for async processing.
+AMEX Coding Portal - A full-stack web application for coding American Express corporate card transactions with comprehensive analytics. Built with FastAPI backend, React/TypeScript frontend, PostgreSQL database, Celery for async processing, and advanced spending analytics.
 
 ## Key Commands
 
@@ -77,30 +77,38 @@ black app/  # Format code
 - **frontend**: React app on port 3000
 
 ### Backend Structure
-- `app/api/v1/`: REST API endpoints (auth, users, statements, transactions, cardholders)
+- `app/api/v1/`: REST API endpoints (auth, users, statements, transactions, cardholders, analytics)
 - `app/core/`: Core configuration, security (JWT auth), Celery setup
-- `app/db/`: SQLAlchemy models and Pydantic schemas
-- `app/services/`: Business logic - PDF processing, Excel processing, email service
-- `app/tasks/`: Celery task definitions for async operations
+- `app/db/`: SQLAlchemy models and Pydantic schemas (including analytics models)
+- `app/services/`: Business logic - PDF processing, Excel processing, email service, analytics processor
+- `app/tasks/`: Celery task definitions for async operations including analytics processing
 
 ### Frontend Structure
-- `src/components/`: Feature-based component organization (auth, admin, coding, dashboard)
-- `src/store/`: Redux Toolkit store with slices for each domain
-- `src/services/api.ts`: Axios API client with auth interceptors
+- `src/components/`: Feature-based component organization (auth, admin, coding, dashboard, analytics)
+- `src/store/`: Redux Toolkit store with slices for each domain (including analytics and budgets)
+- `src/services/api.ts`: Axios API client with auth interceptors and analytics endpoints
 - Split-screen coding interface: PDFViewer + TransactionCodingForm components
+- Analytics dashboard with interactive charts using Recharts library
 
 ### Key Workflows
 
-1. **Statement Processing**: Upload PDF/Excel → Celery processes → Splits by cardholder → Stores in DB
+1. **Statement Processing**: Upload PDF/Excel → Celery processes → Splits by cardholder → Auto-categorizes transactions → Calculates analytics → Stores in DB
 2. **Transaction Coding**: Load statement → Display PDF + transactions → Code each transaction → Save to DB
 3. **Email Distribution**: Admin triggers → Celery sends emails with attachments via SMTP/Outlook
+4. **Analytics Processing**: Transactions auto-categorized → Spending metrics calculated → Anomalies detected → Budgets monitored
+5. **Multiple Statements**: Support for 2-3 PDFs per month/year period with different filenames
 
 ### Database Models
 - User (with roles: admin, coder, reviewer)
 - Cardholder (assigned to coders)
-- Statement (PDF/Excel uploads)
-- Transaction (individual line items to code)
+- Statement (PDF/Excel uploads, supports multiple per period)
+- Transaction (individual line items to code with category)
 - CodingSession (tracks who coded what)
+- SpendingCategory (expense categories like Travel, Meals, etc.)
+- MerchantMapping (maps merchant names to categories)
+- SpendingAnalytics (pre-computed analytics data)
+- BudgetLimit (spending limits by category/cardholder)
+- SpendingAlert (anomaly and budget alerts)
 
 ### Authentication
 JWT-based authentication with role-based access control. Token stored in localStorage, included in API requests via Axios interceptor.
@@ -109,3 +117,48 @@ JWT-based authentication with role-based access control. Token stored in localSt
 - Backend: pytest with fixtures for database and API client
 - Frontend: Jest + React Testing Library
 - Run all tests: `make test`
+
+## Analytics Features
+
+### Automatic Transaction Categorization
+- Merchant name pattern matching
+- Default categories: Travel, Meals & Entertainment, Office Supplies, Technology, Transportation, Professional Services, Utilities, Marketing, Other
+- Configurable merchant mappings with confidence scores
+
+### Analytics Dashboard
+- **Overview KPIs**: Total spending, transaction count, average transaction, period comparison
+- **Category Breakdown**: Pie chart showing spending distribution by category
+- **Spending Trends**: Time-series chart showing monthly spending patterns
+- **Top Merchants**: Table with spending amounts and transaction counts
+- **Cardholder Comparison**: Compare spending across cardholders with trends
+- **Anomaly Alerts**: Unusual spending patterns and budget overages
+
+### Budget Management
+- Set spending limits by category, cardholder, or both
+- Configurable alert thresholds (default 80%)
+- Real-time budget monitoring during transaction processing
+
+### Analytics Processing
+- Runs automatically after statement upload
+- Pre-computes metrics for fast dashboard loading
+- Detects spending anomalies (>50% increase from historical average)
+- Generates alerts for budget violations
+
+### API Endpoints
+- `/api/v1/analytics/dashboard` - Main analytics overview
+- `/api/v1/analytics/spending-by-category` - Category breakdown
+- `/api/v1/analytics/spending-by-merchant` - Top merchants
+- `/api/v1/analytics/spending-trends` - Time series data
+- `/api/v1/analytics/spending-by-cardholder` - Cardholder comparison
+- `/api/v1/analytics/alerts` - Spending alerts
+- `/api/v1/analytics/budgets` - Budget management
+
+### Frontend Components
+- `AnalyticsDashboard` - Main analytics page
+- `SpendingOverview` - KPI cards with trends
+- `CategoryChart` - Interactive pie chart
+- `TrendChart` - Area chart for time series
+- `MerchantTable` - Top merchants with visual bars
+- `CardholderComparison` - Comparative table
+- `AnomalyAlerts` - Alert list with resolution
+- `AnalyticsFilters` - Date and filter controls
