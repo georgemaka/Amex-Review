@@ -116,6 +116,11 @@ class ApiService {
     return response.data;
   }
 
+  async deleteStatement(id: number) {
+    const response = await this.api.delete(`/statements/${id}`);
+    return response.data;
+  }
+
   // Transaction endpoints
   async getTransactions(params?: {
     cardholder_statement_id?: number;

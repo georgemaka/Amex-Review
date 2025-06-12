@@ -90,6 +90,14 @@ export const sendStatementEmails = createAsyncThunk(
   }
 );
 
+export const deleteStatement = createAsyncThunk(
+  'statements/deleteStatement',
+  async (id: number) => {
+    const response = await api.deleteStatement(id);
+    return { id, ...response };
+  }
+);
+
 const statementSlice = createSlice({
   name: 'statements',
   initialState,
@@ -143,6 +151,22 @@ const statementSlice = createSlice({
       .addCase(uploadStatement.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.error.message || 'Failed to upload statement';
+      })
+      // Delete statement
+      .addCase(deleteStatement.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(deleteStatement.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.statements = state.statements.filter(s => s.id !== action.payload.id);
+        if (state.currentStatement?.id === action.payload.id) {
+          state.currentStatement = null;
+        }
+      })
+      .addCase(deleteStatement.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.error.message || 'Failed to delete statement';
       });
   },
 });

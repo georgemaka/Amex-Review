@@ -17,6 +17,11 @@ import {
   Tooltip,
   Typography,
   LinearProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
 } from '@mui/material';
 import {
   Add,
@@ -24,10 +29,12 @@ import {
   Email,
   Download,
   Assignment,
+  Delete,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { RootState, AppDispatch } from '../../store';
-import { fetchStatements } from '../../store/slices/statementSlice';
+import { fetchStatements, deleteStatement } from '../../store/slices/statementSlice';
+import { showNotification } from '../../store/slices/uiSlice';
 
 const StatementList: React.FC = () => {
   const navigate = useNavigate();
@@ -37,6 +44,8 @@ const StatementList: React.FC = () => {
   
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [statementToDelete, setStatementToDelete] = useState<number | null>(null);
 
   useEffect(() => {
     dispatch(fetchStatements({ skip: page * rowsPerPage, limit: rowsPerPage }));
@@ -70,6 +79,37 @@ const StatementList: React.FC = () => {
       default:
         return 'default';
     }
+  };
+
+  const handleDeleteClick = (id: number) => {
+    setStatementToDelete(id);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (statementToDelete) {
+      try {
+        await dispatch(deleteStatement(statementToDelete)).unwrap();
+        dispatch(showNotification({
+          message: 'Statement deleted successfully',
+          severity: 'success',
+        }));
+        // Refresh the list
+        dispatch(fetchStatements({ skip: page * rowsPerPage, limit: rowsPerPage }));
+      } catch (error) {
+        dispatch(showNotification({
+          message: 'Failed to delete statement',
+          severity: 'error',
+        }));
+      }
+    }
+    setDeleteDialogOpen(false);
+    setStatementToDelete(null);
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteDialogOpen(false);
+    setStatementToDelete(null);
   };
 
   return (
@@ -167,6 +207,18 @@ const StatementList: React.FC = () => {
                         </IconButton>
                       </Tooltip>
                     )}
+                    
+                    {user?.role === 'admin' && (
+                      <Tooltip title="Delete Statement">
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => handleDeleteClick(statement.id)}
+                        >
+                          <Delete />
+                        </IconButton>
+                      </Tooltip>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -192,6 +244,39 @@ const StatementList: React.FC = () => {
           onRowsPerPageChange={handleChangeRowsPerPage}
         />
       </Paper>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={handleDeleteCancel}
+        aria-labelledby="delete-dialog-title"
+        aria-describedby="delete-dialog-description"
+      >
+        <DialogTitle id="delete-dialog-title">
+          Delete Statement
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText id="delete-dialog-description">
+            Are you sure you want to delete this statement? This will permanently delete:
+            <ul>
+              <li>The statement record</li>
+              <li>All cardholder splits and PDFs</li>
+              <li>All transaction records</li>
+              <li>All analytics data</li>
+              <li>All uploaded files</li>
+            </ul>
+            This action cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDeleteCancel} color="primary">
+            Cancel
+          </Button>
+          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

@@ -125,8 +125,9 @@ class Statement(Base):
     created_by_id = Column(Integer, ForeignKey("users.id"))
     
     # Relationships
-    cardholder_statements = relationship("CardholderStatement", back_populates="statement")
+    cardholder_statements = relationship("CardholderStatement", back_populates="statement", cascade="all, delete-orphan")
     created_by = relationship("User", foreign_keys=[created_by_id])
+    analytics = relationship("SpendingAnalytics", cascade="all, delete-orphan")
 
 
 class CardholderStatement(Base):
@@ -149,7 +150,7 @@ class CardholderStatement(Base):
     # Relationships
     statement = relationship("Statement", back_populates="cardholder_statements")
     cardholder = relationship("Cardholder", back_populates="statements")
-    transactions = relationship("Transaction", back_populates="cardholder_statement")
+    transactions = relationship("Transaction", back_populates="cardholder_statement", cascade="all, delete-orphan")
 
 
 class Transaction(Base):

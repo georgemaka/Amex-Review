@@ -371,6 +371,75 @@ async def download_all_pdfs(
         raise HTTPException(500, f"Failed to create ZIP: {str(e)}")
 
 
+@router.delete("/{statement_id}")
+async def delete_statement(
+    statement_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(check_user_role([UserRole.ADMIN]))
+) -> Any:
+    """Delete a statement and all related data."""
+    import shutil
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    # Get statement
+    result = await db.execute(
+        select(Statement).where(Statement.id == statement_id)
+    )
+    statement = result.scalar_one_or_none()
+    
+    if not statement:
+        raise HTTPException(404, "Statement not found")
+    
+    # Get all related cardholder statements for file cleanup
+    cs_result = await db.execute(
+        select(CardholderStatement).where(CardholderStatement.statement_id == statement_id)
+    )
+    cardholder_statements = cs_result.scalars().all()
+    
+    # Delete files from filesystem
+    
+    # Delete main PDF and Excel files
+    for file_path in [statement.pdf_path, statement.excel_path]:
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                logger.warning(f"Failed to delete file {file_path}: {e}")
+    
+    # Delete cardholder files
+    for cs in cardholder_statements:
+        for file_path in [cs.pdf_path, cs.csv_path]:
+            if file_path and os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except Exception as e:
+                    logger.warning(f"Failed to delete file {file_path}: {e}")
+    
+    # Delete the statement directory
+    statement_dir = os.path.join(settings.UPLOAD_DIR, f"statements/{statement_id}")
+    if os.path.exists(statement_dir):
+        try:
+            shutil.rmtree(statement_dir)
+        except Exception as e:
+            logger.warning(f"Failed to delete directory {statement_dir}: {e}")
+    
+    # Also clean up the month directory if it exists
+    month_dir = os.path.join(settings.UPLOAD_DIR, "statements", f"{statement.year}-{statement.month:02d}")
+    if os.path.exists(month_dir):
+        try:
+            shutil.rmtree(month_dir)
+        except Exception as e:
+            logger.warning(f"Failed to delete directory {month_dir}: {e}")
+    
+    # Delete from database (cascading will handle related records)
+    await db.delete(statement)
+    await db.commit()
+    
+    return {"message": "Statement deleted successfully", "statement_id": statement_id}
+
+
 @router.get("/{statement_id}/download-all-csvs")
 async def download_all_csvs(
     statement_id: int,
@@ -412,6 +481,75 @@ async def download_all_csvs(
     except Exception as e:
         os.unlink(temp_zip.name)
         raise HTTPException(500, f"Failed to create ZIP: {str(e)}")
+
+
+@router.delete("/{statement_id}")
+async def delete_statement(
+    statement_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(check_user_role([UserRole.ADMIN]))
+) -> Any:
+    """Delete a statement and all related data."""
+    import shutil
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    # Get statement
+    result = await db.execute(
+        select(Statement).where(Statement.id == statement_id)
+    )
+    statement = result.scalar_one_or_none()
+    
+    if not statement:
+        raise HTTPException(404, "Statement not found")
+    
+    # Get all related cardholder statements for file cleanup
+    cs_result = await db.execute(
+        select(CardholderStatement).where(CardholderStatement.statement_id == statement_id)
+    )
+    cardholder_statements = cs_result.scalars().all()
+    
+    # Delete files from filesystem
+    
+    # Delete main PDF and Excel files
+    for file_path in [statement.pdf_path, statement.excel_path]:
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                logger.warning(f"Failed to delete file {file_path}: {e}")
+    
+    # Delete cardholder files
+    for cs in cardholder_statements:
+        for file_path in [cs.pdf_path, cs.csv_path]:
+            if file_path and os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except Exception as e:
+                    logger.warning(f"Failed to delete file {file_path}: {e}")
+    
+    # Delete the statement directory
+    statement_dir = os.path.join(settings.UPLOAD_DIR, f"statements/{statement_id}")
+    if os.path.exists(statement_dir):
+        try:
+            shutil.rmtree(statement_dir)
+        except Exception as e:
+            logger.warning(f"Failed to delete directory {statement_dir}: {e}")
+    
+    # Also clean up the month directory if it exists
+    month_dir = os.path.join(settings.UPLOAD_DIR, "statements", f"{statement.year}-{statement.month:02d}")
+    if os.path.exists(month_dir):
+        try:
+            shutil.rmtree(month_dir)
+        except Exception as e:
+            logger.warning(f"Failed to delete directory {month_dir}: {e}")
+    
+    # Delete from database (cascading will handle related records)
+    await db.delete(statement)
+    await db.commit()
+    
+    return {"message": "Statement deleted successfully", "statement_id": statement_id}
 
 
 @router.get("/{statement_id}/download-all")
@@ -460,3 +598,72 @@ async def download_all_files(
     except Exception as e:
         os.unlink(temp_zip.name)
         raise HTTPException(500, f"Failed to create ZIP: {str(e)}")
+
+
+@router.delete("/{statement_id}")
+async def delete_statement(
+    statement_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(check_user_role([UserRole.ADMIN]))
+) -> Any:
+    """Delete a statement and all related data."""
+    import shutil
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    # Get statement
+    result = await db.execute(
+        select(Statement).where(Statement.id == statement_id)
+    )
+    statement = result.scalar_one_or_none()
+    
+    if not statement:
+        raise HTTPException(404, "Statement not found")
+    
+    # Get all related cardholder statements for file cleanup
+    cs_result = await db.execute(
+        select(CardholderStatement).where(CardholderStatement.statement_id == statement_id)
+    )
+    cardholder_statements = cs_result.scalars().all()
+    
+    # Delete files from filesystem
+    
+    # Delete main PDF and Excel files
+    for file_path in [statement.pdf_path, statement.excel_path]:
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except Exception as e:
+                logger.warning(f"Failed to delete file {file_path}: {e}")
+    
+    # Delete cardholder files
+    for cs in cardholder_statements:
+        for file_path in [cs.pdf_path, cs.csv_path]:
+            if file_path and os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except Exception as e:
+                    logger.warning(f"Failed to delete file {file_path}: {e}")
+    
+    # Delete the statement directory
+    statement_dir = os.path.join(settings.UPLOAD_DIR, f"statements/{statement_id}")
+    if os.path.exists(statement_dir):
+        try:
+            shutil.rmtree(statement_dir)
+        except Exception as e:
+            logger.warning(f"Failed to delete directory {statement_dir}: {e}")
+    
+    # Also clean up the month directory if it exists
+    month_dir = os.path.join(settings.UPLOAD_DIR, "statements", f"{statement.year}-{statement.month:02d}")
+    if os.path.exists(month_dir):
+        try:
+            shutil.rmtree(month_dir)
+        except Exception as e:
+            logger.warning(f"Failed to delete directory {month_dir}: {e}")
+    
+    # Delete from database (cascading will handle related records)
+    await db.delete(statement)
+    await db.commit()
+    
+    return {"message": "Statement deleted successfully", "statement_id": statement_id}
