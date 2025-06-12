@@ -16,7 +16,9 @@
       "Bash(grep:*)",
       "Bash(awk:*)",
       "Bash(sed:*)",
-      "Bash(cp:*)"
+      "Bash(cp:*)",
+      "Bash(python test_pdf_split.py:*)",
+      "Bash(docker cp:*)"
     ],
     "deny": []
   }

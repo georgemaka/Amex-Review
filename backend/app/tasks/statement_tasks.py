@@ -58,6 +58,12 @@ def process_statement_task(self, statement_id: int) -> Dict:
         logger.info(f"Splitting PDF file: {statement.pdf_path}")
         pdf_results = pdf_processor.split_by_cardholder(statement.pdf_path, pdf_output_dir)
         
+        # Validate the split
+        validation_results = pdf_processor.validate_split(pdf_results)
+        if validation_results:
+            logger.warning(f"PDF split validation found issues: {validation_results}")
+            # Continue processing but log the issues
+        
         # Update progress
         self.update_state(
             state="PROGRESS",

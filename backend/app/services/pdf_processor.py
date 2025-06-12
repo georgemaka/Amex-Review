@@ -71,7 +71,7 @@ class PDFProcessor:
                     "closing_date": closing_date
                 }
                 
-                logger.info(f"Created PDF for {cardholder_name}: {filename}")
+                logger.info(f"Created PDF for {cardholder_name}: {filename} (pages {page_range[0]}-{page_range[1]})")
         
         except Exception as e:
             logger.error(f"Error processing PDF: {str(e)}")
@@ -85,28 +85,46 @@ class PDFProcessor:
         current_cardholder = None
         start_page = None
         
+        logger.info(f"Starting PDF split analysis for {len(pdf.pages)} pages")
+        
         for page_num, page in enumerate(pdf.pages, 1):
             text = page.extract_text() or ""
             
             # Skip blank pages
             if len(text.strip()) < 50:
+                logger.debug(f"Page {page_num}: Skipping blank page")
                 continue
             
             # Look for cardholder totals
             matches = self.cardholder_pattern.findall(text)
             
             if matches:
+                logger.info(f"Page {page_num}: Found cardholder pattern: '{matches[0]}'")
+                
                 # If we were tracking a cardholder, save their page range
                 if current_cardholder and start_page:
-                    cardholder_pages[current_cardholder] = (start_page, page_num)
+                    # Use page_num - 1 to exclude the current page (which has the next cardholder's total)
+                    end_page = page_num - 1
+                    cardholder_pages[current_cardholder] = (start_page, end_page)
+                    logger.info(f"  Assigned {current_cardholder}: pages {start_page}-{end_page} ({end_page - start_page + 1} pages)")
                 
                 # Start tracking new cardholder
                 current_cardholder = matches[0].strip()
                 start_page = page_num
+                logger.info(f"  Now tracking: {current_cardholder} starting at page {start_page}")
         
         # Save the last cardholder
         if current_cardholder and start_page:
             cardholder_pages[current_cardholder] = (start_page, len(pdf.pages))
+            logger.info(f"  Final cardholder {current_cardholder}: pages {start_page}-{len(pdf.pages)} ({len(pdf.pages) - start_page + 1} pages)")
+        
+        # Log summary
+        logger.info(f"PDF split summary: Found {len(cardholder_pages)} cardholders")
+        total_pages_assigned = sum(end - start + 1 for start, end in cardholder_pages.values())
+        logger.info(f"Total pages assigned: {total_pages_assigned} out of {len(pdf.pages)} pages")
+        
+        for name, (start, end) in sorted(cardholder_pages.items()):
+            logger.info(f"  - {name}: pages {start}-{end} ({end - start + 1} pages)")
         
         return cardholder_pages
     
@@ -138,3 +156,49 @@ class PDFProcessor:
             logger.error(f"Error extracting transactions: {str(e)}")
         
         return transactions
+    
+    def validate_split(self, split_results: Dict[str, Dict]) -> Dict[str, List[str]]:
+        """
+        Validate that each split PDF contains only one cardholder's data.
+        Returns dict of warnings/errors found.
+        """
+        validation_results = {}
+        all_cardholders = list(split_results.keys())
+        
+        logger.info("Starting split validation...")
+        
+        for cardholder_name, info in split_results.items():
+            pdf_path = info['path']
+            warnings = []
+            
+            try:
+                with pdfplumber.open(pdf_path) as pdf:
+                    full_text = ""
+                    for page in pdf.pages:
+                        full_text += (page.extract_text() or "") + "\n"
+                    
+                    # Check if any other cardholder names appear in this PDF
+                    for other_cardholder in all_cardholders:
+                        if other_cardholder != cardholder_name:
+                            # Look for "Total for OTHER_NAME" pattern
+                            if f"Total for {other_cardholder}" in full_text:
+                                warnings.append(f"Found '{other_cardholder}' data in {cardholder_name}'s PDF!")
+                                logger.warning(f"Cross-contamination detected: {other_cardholder} found in {cardholder_name}'s PDF")
+                    
+                    # Log some stats
+                    page_count = len(pdf.pages)
+                    logger.info(f"Validated {cardholder_name}: {page_count} pages, text length: {len(full_text)}")
+                    
+                    if warnings:
+                        validation_results[cardholder_name] = warnings
+                    
+            except Exception as e:
+                logger.error(f"Error validating {cardholder_name}'s PDF: {str(e)}")
+                validation_results[cardholder_name] = [f"Validation error: {str(e)}"]
+        
+        if validation_results:
+            logger.warning(f"Validation found issues in {len(validation_results)} PDFs")
+        else:
+            logger.info("Validation complete: All PDFs appear to be correctly split")
+        
+        return validation_results
