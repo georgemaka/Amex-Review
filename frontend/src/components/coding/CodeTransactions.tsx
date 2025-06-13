@@ -33,6 +33,7 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   Autocomplete,
+  LinearProgress,
 } from '@mui/material';
 import {
   Save,
@@ -43,6 +44,7 @@ import {
   Work,
   Build,
   Edit,
+  ContentCopy,
 } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -127,6 +129,12 @@ const CodeTransactions: React.FC = () => {
   const [highlightedMerchant, setHighlightedMerchant] = useState<string | null>(null);
   const [selectedCodingTypes, setSelectedCodingTypes] = useState<{[key: number]: string}>({});
   
+  // Recently used items tracking
+  const [recentlyUsedCompanies, setRecentlyUsedCompanies] = useState<number[]>([]);
+  const [recentlyUsedGlAccounts, setRecentlyUsedGlAccounts] = useState<number[]>([]);
+  const [recentlyUsedJobs, setRecentlyUsedJobs] = useState<number[]>([]);
+  const [recentlyUsedEquipment, setRecentlyUsedEquipment] = useState<number[]>([]);
+  
   
   // Coding form
   const [codingType, setCodingType] = useState<string>('gl_account');
@@ -169,6 +177,57 @@ const CodeTransactions: React.FC = () => {
       setSelectedGlAccount('');
     }
   }, [selectedCompany]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger shortcuts when typing in input fields
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      // Ctrl+S or Cmd+S - Save current transaction
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        const editingTransactionId = Object.keys(inlineCoding)[0];
+        if (editingTransactionId) {
+          handleSaveInlineCoding(parseInt(editingTransactionId));
+        }
+      }
+
+      // Escape - Cancel current editing
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setSelectedCodingTypes({});
+        setInlineCoding({});
+        setInlineEditingId(null);
+      }
+
+      // 1, 2, 3 - Quick coding type selection
+      if (inlineEditingId) {
+        if (e.key === '1') {
+          e.preventDefault();
+          setSelectedCodingTypes(prev => ({...prev, [inlineEditingId]: 'gl_account'}));
+        } else if (e.key === '2') {
+          e.preventDefault();
+          setSelectedCodingTypes(prev => ({...prev, [inlineEditingId]: 'job'}));
+        } else if (e.key === '3') {
+          e.preventDefault();
+          setSelectedCodingTypes(prev => ({...prev, [inlineEditingId]: 'equipment'}));
+        }
+      }
+
+      // Ctrl+A or Cmd+A - Select all visible transactions
+      if ((e.ctrlKey || e.metaKey) && e.key === 'a' && !e.shiftKey) {
+        e.preventDefault();
+        // We'll handle this in the component since sortedTransactions isn't available here
+        document.dispatchEvent(new CustomEvent('selectAllTransactions'));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [inlineCoding, inlineEditingId]);
 
   const loadReferenceData = async () => {
     try {
@@ -286,6 +345,11 @@ const CodeTransactions: React.FC = () => {
       cardholder.includes(searchLower)
     );
   });
+
+  // Calculate coding progress
+  const codedCount = filteredTransactions.filter(t => t.status === 'coded' || t.status === 'reviewed').length;
+  const totalCount = filteredTransactions.length;
+  const progressPercentage = totalCount > 0 ? (codedCount / totalCount) * 100 : 0;
 
   // Sort filtered transactions
   const sortedTransactions = [...filteredTransactions].sort((a, b) => {
@@ -409,6 +473,12 @@ const CodeTransactions: React.FC = () => {
         notes: coding.notes || ''
       });
       
+      // Track recently used items
+      if (coding.selectedCompany) trackRecentlyUsed('company', coding.selectedCompany);
+      if (coding.selectedGlAccount) trackRecentlyUsed('gl_account', coding.selectedGlAccount);
+      if (coding.selectedJob) trackRecentlyUsed('job', coding.selectedJob);
+      if (coding.selectedEquipment) trackRecentlyUsed('equipment', coding.selectedEquipment);
+      
       setSuccess('Transaction coded successfully');
       setInlineEditingId(null);
       setInlineCoding(prev => {
@@ -510,6 +580,75 @@ const CodeTransactions: React.FC = () => {
     }
   };
 
+  // Find previously coded transaction with same merchant
+  const findPreviouslyCodedTransaction = (currentTransaction: Transaction) => {
+    const currentMerchant = extractMerchantName(currentTransaction.description);
+    return transactions.find(t => 
+      t.id !== currentTransaction.id &&
+      t.status !== 'uncoded' &&
+      t.coding_type &&
+      extractMerchantName(t.description) === currentMerchant
+    );
+  };
+
+  // Copy coding from another transaction
+  const copyFromTransaction = (fromTransaction: Transaction, toTransactionId: number) => {
+    setSelectedCodingTypes(prev => ({...prev, [toTransactionId]: fromTransaction.coding_type || ''}));
+    setInlineCoding(prev => ({
+      ...prev,
+      [toTransactionId]: {
+        codingType: fromTransaction.coding_type || '',
+        selectedCompany: fromTransaction.company_id || '',
+        selectedGlAccount: fromTransaction.gl_account_id || '',
+        selectedJob: fromTransaction.job_id || '',
+        selectedJobPhase: fromTransaction.job_phase_id || '',
+        selectedJobCostType: fromTransaction.job_cost_type_id || '',
+        selectedEquipment: fromTransaction.equipment_id || '',
+        selectedEquipmentCostCode: fromTransaction.equipment_cost_code_id || '',
+        selectedEquipmentCostType: fromTransaction.equipment_cost_type_id || '',
+        notes: fromTransaction.notes || ''
+      }
+    }));
+  };
+
+  // Track recently used items
+  const trackRecentlyUsed = (type: string, id: number) => {
+    const maxRecent = 5;
+    switch (type) {
+      case 'company':
+        setRecentlyUsedCompanies(prev => [id, ...prev.filter(i => i !== id)].slice(0, maxRecent));
+        break;
+      case 'gl_account':
+        setRecentlyUsedGlAccounts(prev => [id, ...prev.filter(i => i !== id)].slice(0, maxRecent));
+        break;
+      case 'job':
+        setRecentlyUsedJobs(prev => [id, ...prev.filter(i => i !== id)].slice(0, maxRecent));
+        break;
+      case 'equipment':
+        setRecentlyUsedEquipment(prev => [id, ...prev.filter(i => i !== id)].slice(0, maxRecent));
+        break;
+    }
+  };
+
+  // Sort items with recently used at the top
+  const sortWithRecentlyUsed = <T extends { id: number }>(items: T[], recentIds: number[]): T[] => {
+    const recentItems = recentIds
+      .map(id => items.find(item => item.id === id))
+      .filter(Boolean) as T[];
+    const otherItems = items.filter(item => !recentIds.includes(item.id));
+    return [...recentItems, ...otherItems];
+  };
+
+  // Handle select all event after sortedTransactions is available
+  useEffect(() => {
+    const handleSelectAll = () => {
+      const visibleIds = sortedTransactions.map(t => t.id);
+      setSelectedTransactions(visibleIds);
+    };
+
+    document.addEventListener('selectAllTransactions', handleSelectAll);
+    return () => document.removeEventListener('selectAllTransactions', handleSelectAll);
+  }, [sortedTransactions]);
 
   return (
     <Box sx={{ pb: 4 }}>
@@ -628,6 +767,33 @@ const CodeTransactions: React.FC = () => {
         </Grid>
       </Paper>
 
+      {/* Progress Bar */}
+      {totalCount > 0 && (
+        <Paper sx={{ p: 2, mb: 2 }}>
+          <Box sx={{ mb: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="subtitle2" color="text.secondary">
+              Coding Progress: {codedCount} of {totalCount} transactions ({progressPercentage.toFixed(0)}%)
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Uncoded: {totalCount - codedCount}
+            </Typography>
+          </Box>
+          <LinearProgress 
+            variant="determinate" 
+            value={progressPercentage} 
+            sx={{ 
+              height: 8, 
+              borderRadius: 4,
+              backgroundColor: 'grey.200',
+              '& .MuiLinearProgress-bar': {
+                borderRadius: 4,
+                backgroundColor: progressPercentage === 100 ? 'success.main' : 'primary.main'
+              }
+            }} 
+          />
+        </Paper>
+      )}
+
       {/* Actions */}
       {selectedTransactions.length > 0 && (
         <Paper sx={{ p: 2, mb: 2 }}>
@@ -654,9 +820,14 @@ const CodeTransactions: React.FC = () => {
             Showing {sortedTransactions.length} of {transactions.length} transactions
           </Typography>
         )}
-        <Typography variant="caption" color="text.secondary">
-          Click merchant name to highlight similar transactions • Select GL/Job/Equipment to start coding
-        </Typography>
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
+          <Typography variant="caption" color="text.secondary">
+            Click merchant name to highlight similar transactions • Select GL/Job/Equipment to start coding
+          </Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+            Shortcuts: Ctrl+S Save • Esc Cancel • 1/2/3 Quick type • Ctrl+A Select all
+          </Typography>
+        </Box>
       </Box>
 
       {/* Transactions Table */}
@@ -736,7 +907,22 @@ const CodeTransactions: React.FC = () => {
                       sx={{
                         backgroundColor: highlightedMerchant && extractMerchantName(transaction.description) === highlightedMerchant
                           ? 'action.hover'
-                          : 'inherit'
+                          : transaction.status === 'coded'
+                          ? 'rgba(25, 118, 210, 0.04)'  // Light blue for coded
+                          : transaction.status === 'reviewed'
+                          ? 'rgba(76, 175, 80, 0.04)'   // Light green for reviewed
+                          : transaction.status === 'rejected'
+                          ? 'rgba(244, 67, 54, 0.04)'   // Light red for rejected
+                          : 'inherit',
+                        borderLeft: transaction.status === 'uncoded' 
+                          ? '3px solid #ff9800'  // Orange border for uncoded
+                          : transaction.status === 'coded'
+                          ? '3px solid #1976d2'  // Blue border for coded
+                          : transaction.status === 'reviewed'
+                          ? '3px solid #4caf50'  // Green border for reviewed
+                          : transaction.status === 'rejected'
+                          ? '3px solid #f44336'  // Red border for rejected
+                          : 'none'
                       }}
                     >
                       <TableCell padding="checkbox">
@@ -854,9 +1040,18 @@ const CodeTransactions: React.FC = () => {
                                     size="small"
                                   >
                                     <MenuItem value="">Company</MenuItem>
-                                    {companies.map(company => (
+                                    {recentlyUsedCompanies.length > 0 && (
+                                      <MenuItem disabled>
+                                        <Typography variant="caption" color="text.secondary">Recently Used</Typography>
+                                      </MenuItem>
+                                    )}
+                                    {sortWithRecentlyUsed(companies, recentlyUsedCompanies).map((company, index) => (
                                       <MenuItem key={company.id} value={company.id}>
+                                        {recentlyUsedCompanies.includes(company.id) && '★ '}
                                         {company.code} - {company.name}
+                                        {index === recentlyUsedCompanies.length - 1 && recentlyUsedCompanies.length > 0 && (
+                                          <Box component="span" sx={{ display: 'block', borderBottom: '1px solid #ddd', mt: 1 }} />
+                                        )}
                                       </MenuItem>
                                     ))}
                                   </Select>
@@ -878,13 +1073,26 @@ const CodeTransactions: React.FC = () => {
                                       size="small"
                                     >
                                       <MenuItem value="">GL Account</MenuItem>
-                                      {glAccounts
-                                        .filter(gl => gl.company_id === inlineCoding[transaction.id]?.selectedCompany)
-                                        .map(gl => (
+                                      {recentlyUsedGlAccounts.length > 0 && (
+                                        <MenuItem disabled>
+                                          <Typography variant="caption" color="text.secondary">Recently Used</Typography>
+                                        </MenuItem>
+                                      )}
+                                      {sortWithRecentlyUsed(
+                                        glAccounts.filter(gl => gl.company_id === inlineCoding[transaction.id]?.selectedCompany),
+                                        recentlyUsedGlAccounts
+                                      ).map((gl, index) => {
+                                        const isRecentlyUsed = recentlyUsedGlAccounts.includes(gl.id);
+                                        const isLastRecent = index === recentlyUsedGlAccounts.filter(id => 
+                                          glAccounts.find(g => g.id === id && g.company_id === inlineCoding[transaction.id]?.selectedCompany)
+                                        ).length - 1;
+                                        return (
                                           <MenuItem key={gl.id} value={gl.id}>
+                                            {isRecentlyUsed && '★ '}
                                             {gl.account_code} - {gl.description}
                                           </MenuItem>
-                                        ))}
+                                        );
+                                      })}
                                     </Select>
                                   </FormControl>
                                 )}
@@ -908,8 +1116,14 @@ const CodeTransactions: React.FC = () => {
                                   size="small"
                                 >
                                   <MenuItem value="">Select Job</MenuItem>
-                                  {jobs.map(job => (
+                                  {recentlyUsedJobs.length > 0 && (
+                                    <MenuItem disabled>
+                                      <Typography variant="caption" color="text.secondary">Recently Used</Typography>
+                                    </MenuItem>
+                                  )}
+                                  {sortWithRecentlyUsed(jobs, recentlyUsedJobs).map((job, index) => (
                                     <MenuItem key={job.id} value={job.id}>
+                                      {recentlyUsedJobs.includes(job.id) && '★ '}
                                       {job.job_number} - {job.name}
                                     </MenuItem>
                                   ))}
@@ -934,8 +1148,14 @@ const CodeTransactions: React.FC = () => {
                                   size="small"
                                 >
                                   <MenuItem value="">Select Equipment</MenuItem>
-                                  {equipment.map(eq => (
+                                  {recentlyUsedEquipment.length > 0 && (
+                                    <MenuItem disabled>
+                                      <Typography variant="caption" color="text.secondary">Recently Used</Typography>
+                                    </MenuItem>
+                                  )}
+                                  {sortWithRecentlyUsed(equipment, recentlyUsedEquipment).map((eq, index) => (
                                     <MenuItem key={eq.id} value={eq.id}>
+                                      {recentlyUsedEquipment.includes(eq.id) && '★ '}
                                       {eq.equipment_number} - {eq.description}
                                     </MenuItem>
                                   ))}
@@ -1021,6 +1241,24 @@ const CodeTransactions: React.FC = () => {
                                   </IconButton>
                                 </Tooltip>
                               ) : null}
+                              {/* Copy from previous button */}
+                              {!transaction.coding_type && (() => {
+                                const previouslyCoded = findPreviouslyCodedTransaction(transaction);
+                                return previouslyCoded ? (
+                                  <Tooltip title={`Copy coding from previous ${extractMerchantName(transaction.description)} transaction`}>
+                                    <IconButton
+                                      size="small"
+                                      color="info"
+                                      onClick={() => {
+                                        copyFromTransaction(previouslyCoded, transaction.id);
+                                        setInlineEditingId(transaction.id);
+                                      }}
+                                    >
+                                      <ContentCopy />
+                                    </IconButton>
+                                  </Tooltip>
+                                ) : null;
+                              })()}
                             </>
                           )}
                         </Box>
