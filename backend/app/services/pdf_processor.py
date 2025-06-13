@@ -17,6 +17,12 @@ class PDFProcessor:
         self.cardholder_pattern = re.compile(r"Total for (.+?)(?:New Charges|Previous Balance|\$|$)", re.IGNORECASE)
         self.closing_date_pattern = re.compile(r"Closing Date:\s*(\d{2}/\d{2}/\d{4})")
         self.skip_names = ["J BEHRENS FIELD 2"]
+        # Patterns that indicate a blank or header-only page
+        self.blank_page_patterns = [
+            r"Activity Continued",
+            r"^\s*Page \d+ of \d+\s*$",  # Only page number
+            r"This page intentionally left blank",
+        ]
     
     def split_by_cardholder(self, pdf_path: str, output_dir: str) -> Dict[str, Dict]:
         """
@@ -47,13 +53,28 @@ class PDFProcessor:
             # Split PDF
             reader = PdfReader(pdf_path)
             
+            # Also check pages with pdfplumber to get blank pages list from first pass
+            with pdfplumber.open(pdf_path) as pdf_check:
+                blank_pages_set = set()
+                for page_num, page in enumerate(pdf_check.pages, 1):
+                    text = page.extract_text() or ""
+                    if self._is_blank_or_header_only_page(text):
+                        blank_pages_set.add(page_num)
+            
             for cardholder_name, page_range in cardholder_pages.items():
                 if cardholder_name in self.skip_names:
                     continue
                 
                 writer = PdfWriter()
+                pages_added = 0
                 for page_num in range(page_range[0] - 1, page_range[1]):
+                    # Skip blank/header-only pages except for the last page (which should have the total)
+                    actual_page_num = page_num + 1  # Convert to 1-based
+                    if actual_page_num in blank_pages_set and actual_page_num != page_range[1]:
+                        logger.debug(f"Skipping blank page {actual_page_num} from {cardholder_name}'s PDF")
+                        continue
                     writer.add_page(reader.pages[page_num])
+                    pages_added += 1
                 
                 # Generate filename
                 filename = self._generate_filename(cardholder_name, closing_date)
@@ -68,10 +89,11 @@ class PDFProcessor:
                     "path": output_path,
                     "page_start": page_range[0],
                     "page_end": page_range[1],
+                    "pages_in_pdf": pages_added,
                     "closing_date": closing_date
                 }
                 
-                logger.info(f"Created PDF for {cardholder_name}: {filename} (pages {page_range[0]}-{page_range[1]})")
+                logger.info(f"Created PDF for {cardholder_name}: {filename} (pages {page_range[0]}-{page_range[1]}, {pages_added} pages in final PDF)")
         
         except Exception as e:
             logger.error(f"Error processing PDF: {str(e)}")
@@ -93,10 +115,10 @@ class PDFProcessor:
         for page_num, page in enumerate(pdf.pages, 1):
             text = page.extract_text() or ""
             
-            # Track blank pages
-            if len(text.strip()) < 50:
+            # Track blank pages - check for pages with only headers/footers
+            if self._is_blank_or_header_only_page(text):
                 blank_pages.append(page_num)
-                logger.debug(f"Page {page_num}: Blank page")
+                logger.debug(f"Page {page_num}: Blank or header-only page")
                 continue
             
             # Look for cardholder totals
@@ -140,9 +162,19 @@ class PDFProcessor:
                 # Start after previous assigned cardholder's total page
                 start_page = last_assigned_end + 1
                 # Skip any blank pages
-                while start_page < end_page and start_page in blank_pages:
-                    logger.debug(f"Skipping blank page {start_page} between cardholders")
-                    start_page += 1
+                while start_page < end_page:
+                    if start_page in blank_pages:
+                        logger.debug(f"Skipping blank page {start_page} between cardholders")
+                        start_page += 1
+                    else:
+                        # Double-check the page isn't blank (in case we missed it in first pass)
+                        page_text = pdf.pages[start_page-1].extract_text() or ""
+                        if self._is_blank_or_header_only_page(page_text):
+                            logger.debug(f"Skipping header-only page {start_page} between cardholders")
+                            blank_pages.append(start_page)  # Add to list for consistency
+                            start_page += 1
+                        else:
+                            break
             
             # Validate we have a valid range
             if start_page <= end_page:  # Allow single-page cardholders
@@ -173,6 +205,49 @@ class PDFProcessor:
             logger.info(f"  - {name}: pages {start}-{end} ({end - start + 1} pages)")
         
         return cardholder_pages
+    
+    def _is_blank_or_header_only_page(self, text: str) -> bool:
+        """
+        Check if a page is blank or contains only header/footer information.
+        """
+        # First check if text is too short
+        if len(text.strip()) < 50:
+            return True
+        
+        # Check for known blank page patterns
+        for pattern in self.blank_page_patterns:
+            if re.search(pattern, text, re.IGNORECASE | re.MULTILINE):
+                return True
+        
+        # Remove common header/footer elements
+        cleaned_text = text
+        # Remove page numbers
+        cleaned_text = re.sub(r'Page \d+ of \d+', '', cleaned_text, flags=re.IGNORECASE)
+        # Remove dates in various formats
+        cleaned_text = re.sub(r'\d{1,2}/\d{1,2}/\d{2,4}', '', cleaned_text)
+        # Remove account numbers (various X patterns)
+        cleaned_text = re.sub(r'X{3,}[-\s]?X{3,}[-\s]?\d+', '', cleaned_text, flags=re.IGNORECASE)
+        # Remove common header text
+        cleaned_text = re.sub(r'Prepared For.*?(?:\n|$)', '', cleaned_text, flags=re.IGNORECASE)
+        cleaned_text = re.sub(r'Account Number.*?(?:\n|$)', '', cleaned_text, flags=re.IGNORECASE)
+        cleaned_text = re.sub(r'Closing Date.*?(?:\n|$)', '', cleaned_text, flags=re.IGNORECASE)
+        # Remove company names that might be in header
+        cleaned_text = re.sub(r'SUKUT CONSTRUCTION', '', cleaned_text, flags=re.IGNORECASE)
+        cleaned_text = re.sub(r'AMERICAN EXPRESS', '', cleaned_text, flags=re.IGNORECASE)
+        
+        # After removing headers/footers, check if there's meaningful content left
+        remaining_text = cleaned_text.strip()
+        
+        # If less than 100 characters remain, it's likely just a header/footer page
+        if len(remaining_text) < 100:
+            return True
+        
+        # Check if remaining text is mostly whitespace or special characters
+        alpha_numeric_count = sum(c.isalnum() for c in remaining_text)
+        if alpha_numeric_count < 20:  # Very few actual letters/numbers
+            return True
+        
+        return False
     
     def _generate_filename(self, cardholder_name: str, closing_date: Optional[datetime]) -> str:
         """Generate filename for cardholder PDF."""
