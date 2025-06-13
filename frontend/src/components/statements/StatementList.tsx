@@ -31,6 +31,9 @@ import {
   Assignment,
   Delete,
   Refresh,
+  FolderOpen,
+  People,
+  ListAlt,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { RootState, AppDispatch } from '../../store';
@@ -312,13 +315,18 @@ const StatementList: React.FC = () => {
                   </TableCell>
                   <TableCell align="right">
                     <Button
-                      variant="outlined"
+                      variant="contained"
                       size="small"
-                      startIcon={<Visibility />}
+                      color="info"
+                      startIcon={<People />}
                       onClick={() => navigate(`/statements/${statement.id}`)}
-                      sx={{ mr: 1 }}
+                      sx={{ 
+                        mr: 1,
+                        textTransform: 'none',
+                        fontWeight: 500,
+                      }}
                     >
-                      View Details
+                      View Cardholders
                     </Button>
                     
                     {user?.role === 'coder' && ['distributed', 'in_progress'].includes(statement.status) && (
