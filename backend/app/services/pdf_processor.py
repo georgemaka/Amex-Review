@@ -82,48 +82,94 @@ class PDFProcessor:
     def _find_cardholder_sections(self, pdf) -> Dict[str, Tuple[int, int]]:
         """Find page ranges for each cardholder."""
         cardholder_pages = {}
-        current_cardholder = None
-        start_page = None
+        cardholder_totals = []  # List of (page_num, name) tuples
+        blank_pages = []
+        summary_pages = []
         
         logger.info(f"Starting PDF split analysis for {len(pdf.pages)} pages")
         
+        # First pass: Find all "Total for NAME" pages and identify blank pages
+        first_total_found = False
         for page_num, page in enumerate(pdf.pages, 1):
             text = page.extract_text() or ""
             
-            # Skip blank pages
+            # Track blank pages
             if len(text.strip()) < 50:
-                logger.debug(f"Page {page_num}: Skipping blank page")
+                blank_pages.append(page_num)
+                logger.debug(f"Page {page_num}: Blank page")
                 continue
             
             # Look for cardholder totals
             matches = self.cardholder_pattern.findall(text)
             
             if matches:
-                logger.info(f"Page {page_num}: Found cardholder pattern: '{matches[0]}'")
-                
-                # If we were tracking a cardholder, save their page range
-                if current_cardholder and start_page:
-                    # Use page_num - 1 to exclude the current page (which has the next cardholder's total)
-                    end_page = page_num - 1
-                    cardholder_pages[current_cardholder] = (start_page, end_page)
-                    logger.info(f"  Assigned {current_cardholder}: pages {start_page}-{end_page} ({end_page - start_page + 1} pages)")
-                
-                # Start tracking new cardholder
-                current_cardholder = matches[0].strip()
-                start_page = page_num
-                logger.info(f"  Now tracking: {current_cardholder} starting at page {start_page}")
+                cardholder_name = matches[0].strip()
+                cardholder_totals.append((page_num, cardholder_name))
+                logger.info(f"Page {page_num}: Found 'Total for {cardholder_name}'")
+                first_total_found = True
+            elif not first_total_found:
+                # Pages before first "Total for" are summary pages
+                summary_pages.append(page_num)
+                logger.debug(f"Page {page_num}: Summary page (before first cardholder)")
         
-        # Save the last cardholder
-        if current_cardholder and start_page:
-            cardholder_pages[current_cardholder] = (start_page, len(pdf.pages))
-            logger.info(f"  Final cardholder {current_cardholder}: pages {start_page}-{len(pdf.pages)} ({len(pdf.pages) - start_page + 1} pages)")
+        logger.info(f"Found {len(cardholder_totals)} cardholder totals")
+        logger.info(f"Skipping {len(summary_pages)} summary pages at start")
+        logger.info(f"Found {len(blank_pages)} blank pages throughout document")
+        
+        # Second pass: Assign page ranges
+        last_assigned_end = 0  # Track the last assigned end page
+        
+        for i, (end_page, name) in enumerate(cardholder_totals):
+            if name in self.skip_names:
+                logger.info(f"Skipping cardholder: {name}")
+                last_assigned_end = end_page  # Update last end even for skipped cardholders
+                continue
+                
+            if i == 0 or last_assigned_end == 0:
+                # First cardholder (or first after skipped ones) starts after summary pages
+                start_page = 1
+                # Find first non-blank, non-summary page
+                for p in range(1, end_page):
+                    if p not in blank_pages and p not in summary_pages:
+                        text = pdf.pages[p-1].extract_text() or ""
+                        # Make sure it's not another total page
+                        if "Total for" not in text and len(text.strip()) > 50:
+                            start_page = p
+                            break
+            else:
+                # Start after previous assigned cardholder's total page
+                start_page = last_assigned_end + 1
+                # Skip any blank pages
+                while start_page < end_page and start_page in blank_pages:
+                    logger.debug(f"Skipping blank page {start_page} between cardholders")
+                    start_page += 1
+            
+            # Validate we have a valid range
+            if start_page <= end_page:  # Allow single-page cardholders
+                cardholder_pages[name] = (start_page, end_page)
+                logger.info(f"Assigned {name}: pages {start_page}-{end_page} ({end_page - start_page + 1} pages)")
+                last_assigned_end = end_page  # Update last assigned end
+            else:
+                logger.warning(f"Invalid page range for {name}: start={start_page}, end={end_page}")
         
         # Log summary
-        logger.info(f"PDF split summary: Found {len(cardholder_pages)} cardholders")
+        logger.info(f"PDF split summary: Assigned {len(cardholder_pages)} cardholders")
         total_pages_assigned = sum(end - start + 1 for start, end in cardholder_pages.values())
-        logger.info(f"Total pages assigned: {total_pages_assigned} out of {len(pdf.pages)} pages")
+        total_pages_skipped = len(summary_pages) + len([p for p in blank_pages if p not in summary_pages])
+        logger.info(f"Total pages assigned: {total_pages_assigned}")
+        logger.info(f"Total pages skipped: {total_pages_skipped} ({len(summary_pages)} summary, {len(blank_pages)} blank)")
+        logger.info(f"Total pages in PDF: {len(pdf.pages)}")
         
-        for name, (start, end) in sorted(cardholder_pages.items()):
+        # Check for gaps or overlaps
+        all_assigned_pages = set()
+        for name, (start, end) in cardholder_pages.items():
+            page_range = set(range(start, end + 1))
+            if all_assigned_pages & page_range:
+                logger.error(f"ERROR: Page overlap detected for {name}!")
+            all_assigned_pages.update(page_range)
+        
+        # Log final assignments
+        for name, (start, end) in sorted(cardholder_pages.items(), key=lambda x: x[1][0]):
             logger.info(f"  - {name}: pages {start}-{end} ({end - start + 1} pages)")
         
         return cardholder_pages
@@ -174,20 +220,45 @@ class PDFProcessor:
             try:
                 with pdfplumber.open(pdf_path) as pdf:
                     full_text = ""
-                    for page in pdf.pages:
-                        full_text += (page.extract_text() or "") + "\n"
+                    total_count = 0
+                    cardholder_total_found = False
                     
-                    # Check if any other cardholder names appear in this PDF
+                    for page_num, page in enumerate(pdf.pages, 1):
+                        page_text = page.extract_text() or ""
+                        full_text += page_text + "\n"
+                        
+                        # Count all "Total for" occurrences
+                        total_matches = self.cardholder_pattern.findall(page_text)
+                        for match in total_matches:
+                            total_count += 1
+                            found_name = match.strip()
+                            
+                            if found_name == cardholder_name:
+                                cardholder_total_found = True
+                                logger.debug(f"{cardholder_name}'s PDF: Found own total on page {page_num}")
+                            else:
+                                warnings.append(f"Page {page_num}: Found 'Total for {found_name}' in {cardholder_name}'s PDF!")
+                                logger.error(f"Cross-contamination: Found '{found_name}' on page {page_num} of {cardholder_name}'s PDF")
+                    
+                    # Check if cardholder's own total is present
+                    if not cardholder_total_found:
+                        warnings.append(f"Missing 'Total for {cardholder_name}' in their own PDF!")
+                        logger.warning(f"{cardholder_name}'s PDF missing their own total line")
+                    
+                    # Check for any other cardholder names in the text (not just totals)
                     for other_cardholder in all_cardholders:
                         if other_cardholder != cardholder_name:
-                            # Look for "Total for OTHER_NAME" pattern
-                            if f"Total for {other_cardholder}" in full_text:
-                                warnings.append(f"Found '{other_cardholder}' data in {cardholder_name}'s PDF!")
-                                logger.warning(f"Cross-contamination detected: {other_cardholder} found in {cardholder_name}'s PDF")
+                            # More aggressive check - look for name anywhere in text
+                            if other_cardholder.upper() in full_text.upper():
+                                # Only warn if it's in a transaction context, not just a reference
+                                pattern = f"(Transaction|Amount|{other_cardholder}.*\\$)"
+                                if re.search(pattern, full_text, re.IGNORECASE):
+                                    if f"Total for {other_cardholder}" not in [w for w in warnings if other_cardholder in w]:
+                                        warnings.append(f"Possible transaction data for '{other_cardholder}' found in {cardholder_name}'s PDF")
                     
-                    # Log some stats
+                    # Log stats
                     page_count = len(pdf.pages)
-                    logger.info(f"Validated {cardholder_name}: {page_count} pages, text length: {len(full_text)}")
+                    logger.info(f"Validated {cardholder_name}: {page_count} pages, {total_count} total line(s), text length: {len(full_text)}")
                     
                     if warnings:
                         validation_results[cardholder_name] = warnings
@@ -196,9 +267,14 @@ class PDFProcessor:
                 logger.error(f"Error validating {cardholder_name}'s PDF: {str(e)}")
                 validation_results[cardholder_name] = [f"Validation error: {str(e)}"]
         
+        # Summary
         if validation_results:
-            logger.warning(f"Validation found issues in {len(validation_results)} PDFs")
+            logger.error(f"VALIDATION FAILED: Found issues in {len(validation_results)} out of {len(split_results)} PDFs")
+            for name, issues in validation_results.items():
+                logger.error(f"  {name}: {len(issues)} issue(s)")
+                for issue in issues:
+                    logger.error(f"    - {issue}")
         else:
-            logger.info("Validation complete: All PDFs appear to be correctly split")
+            logger.info("VALIDATION PASSED: All PDFs correctly split with no cross-contamination")
         
         return validation_results
