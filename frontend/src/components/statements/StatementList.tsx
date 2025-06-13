@@ -144,6 +144,11 @@ const StatementList: React.FC = () => {
   }, [statements, pollingInterval, dispatch, page, rowsPerPage, pollErrorCount]);
 
   const handleChangePage = (event: unknown, newPage: number) => {
+    // Don't allow navigating to pages that don't exist
+    if (statements.length < rowsPerPage && newPage > page) {
+      // We're on the last page, don't go forward
+      return;
+    }
     setPage(newPage);
   };
 
@@ -388,15 +393,30 @@ const StatementList: React.FC = () => {
             </TableBody>
           </Table>
         </TableContainer>
-        <TablePagination
-          rowsPerPageOptions={[5, 10, 25]}
-          component="div"
-          count={-1} // We don't know the total count from the API
-          rowsPerPage={rowsPerPage}
-          page={page}
-          onPageChange={handleChangePage}
-          onRowsPerPageChange={handleChangeRowsPerPage}
-        />
+        {statements.length > 0 && (
+          <TablePagination
+            rowsPerPageOptions={[5, 10, 25]}
+            component="div"
+            count={statements.length < rowsPerPage ? statements.length : -1}
+            rowsPerPage={rowsPerPage}
+            page={page}
+            onPageChange={handleChangePage}
+            onRowsPerPageChange={handleChangeRowsPerPage}
+            labelDisplayedRows={({ from, to, count }) => {
+              if (statements.length === 0) return 'No statements';
+              if (statements.length < rowsPerPage) {
+                // Show exact count when we have less than a page
+                return `${statements.length} statement${statements.length === 1 ? '' : 's'}`;
+              }
+              // Show current page info when we might have more
+              const actualTo = Math.min(to, statements.length);
+              return `${from}–${actualTo}${statements.length === rowsPerPage ? '+' : ''}`;
+            }}
+            nextIconButtonProps={{
+              disabled: statements.length < rowsPerPage
+            }}
+          />
+        )}
       </Paper>
 
       {/* Delete Confirmation Dialog */}
