@@ -32,6 +32,7 @@ import {
   Snackbar,
   ToggleButton,
   ToggleButtonGroup,
+  Autocomplete,
 } from '@mui/material';
 import {
   Save,
@@ -512,7 +513,7 @@ const CodeTransactions: React.FC = () => {
 
   return (
     <Box sx={{ pb: 4 }}>
-      <Typography variant="h4" gutterBottom>
+      <Typography variant="h4" gutterBottom sx={{ mt: 0 }}>
         Code Transactions
       </Typography>
 
@@ -523,27 +524,26 @@ const CodeTransactions: React.FC = () => {
       )}
 
       {/* Filters */}
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Grid container spacing={2} alignItems="center">
+      <Paper sx={{ p: 2, mb: 2 }}>
+        <Grid container spacing={2}>
+          {/* First Row */}
           <Grid item xs={12} md={3}>
-            <FormControl fullWidth size="small">
-              <InputLabel>Cardholder</InputLabel>
-              <Select
-                value={selectedCardholder}
-                onChange={(e) => setSelectedCardholder(e.target.value as number | '')}
-                label="Cardholder"
-              >
-                <MenuItem value="">All Cardholders</MenuItem>
-                {cardholders.map((ch) => (
-                  <MenuItem key={ch.id} value={ch.id}>
-                    {ch.full_name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            <Autocomplete
+              size="small"
+              options={cardholders}
+              getOptionLabel={(option) => option.full_name || ''}
+              value={cardholders.find(c => c.id === selectedCardholder) || null}
+              onChange={(_, newValue) => {
+                setSelectedCardholder(newValue?.id || '');
+              }}
+              renderInput={(params) => (
+                <TextField {...params} label="Cardholder" placeholder="Type to search..." />
+              )}
+              isOptionEqualToValue={(option, value) => option.id === value?.id}
+            />
           </Grid>
 
-          <Grid item xs={12} md={2}>
+          <Grid item xs={12} md={3}>
             <LocalizationProvider dateAdapter={AdapterDateFns}>
               <DatePicker
                 label="Date From"
@@ -556,7 +556,7 @@ const CodeTransactions: React.FC = () => {
             </LocalizationProvider>
           </Grid>
 
-          <Grid item xs={12} md={2}>
+          <Grid item xs={12} md={3}>
             <LocalizationProvider dateAdapter={AdapterDateFns}>
               <DatePicker
                 label="Date To"
@@ -569,37 +569,7 @@ const CodeTransactions: React.FC = () => {
             </LocalizationProvider>
           </Grid>
 
-          <Grid item xs={12} md={2}>
-            <FormControl fullWidth size="small">
-              <InputLabel>Status</InputLabel>
-              <Select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                label="Status"
-              >
-                <MenuItem value="all">All</MenuItem>
-                <MenuItem value="uncoded">Uncoded</MenuItem>
-                <MenuItem value="coded">Coded</MenuItem>
-                <MenuItem value="reviewed">Reviewed</MenuItem>
-                <MenuItem value="rejected">Rejected</MenuItem>
-              </Select>
-            </FormControl>
-          </Grid>
-
           <Grid item xs={12} md={3}>
-            <TextField
-              fullWidth
-              size="small"
-              placeholder="Search transactions..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              InputProps={{
-                startAdornment: <Search sx={{ color: 'text.secondary', mr: 1 }} />,
-              }}
-            />
-          </Grid>
-
-          <Grid item xs={12} md={2}>
             <Button
               variant="outlined"
               startIcon={<Clear />}
@@ -611,9 +581,41 @@ const CodeTransactions: React.FC = () => {
                 setSearchTerm('');
               }}
               fullWidth
+              sx={{ height: '40px' }}
             >
-              Clear
+              Clear Filters
             </Button>
+          </Grid>
+
+          {/* Second Row */}
+          <Grid item xs={12} md={3}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Status</InputLabel>
+              <Select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                label="Status"
+              >
+                <MenuItem value="all">All Statuses</MenuItem>
+                <MenuItem value="uncoded">Uncoded</MenuItem>
+                <MenuItem value="coded">Coded</MenuItem>
+                <MenuItem value="reviewed">Reviewed</MenuItem>
+                <MenuItem value="rejected">Rejected</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+
+          <Grid item xs={12} md={9}>
+            <TextField
+              fullWidth
+              size="small"
+              placeholder="Search by merchant, cardholder, amount..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              InputProps={{
+                startAdornment: <Search sx={{ color: 'text.secondary', mr: 1 }} />,
+              }}
+            />
           </Grid>
         </Grid>
       </Paper>
@@ -657,7 +659,7 @@ const CodeTransactions: React.FC = () => {
           </Box>
         ) : (
           <>
-            <TableContainer sx={{ maxHeight: 'calc(100vh - 400px)' }}>
+            <TableContainer>
               <Table stickyHeader>
                 <TableHead>
                   <TableRow>
@@ -668,7 +670,7 @@ const CodeTransactions: React.FC = () => {
                         onChange={handleSelectAll}
                       />
                     </TableCell>
-                    <TableCell sx={{ minWidth: 100 }}>
+                    <TableCell sx={{ width: 100 }}>
                       <TableSortLabel
                         active={orderBy === 'transaction_date'}
                         direction={orderBy === 'transaction_date' ? order : 'asc'}
@@ -677,7 +679,7 @@ const CodeTransactions: React.FC = () => {
                         Date
                       </TableSortLabel>
                     </TableCell>
-                    <TableCell sx={{ minWidth: 150 }}>
+                    <TableCell sx={{ width: 150 }}>
                       <TableSortLabel
                         active={orderBy === 'cardholder'}
                         direction={orderBy === 'cardholder' ? order : 'asc'}
@@ -686,7 +688,7 @@ const CodeTransactions: React.FC = () => {
                         Cardholder
                       </TableSortLabel>
                     </TableCell>
-                    <TableCell sx={{ minWidth: 300 }}>
+                    <TableCell>
                       <TableSortLabel
                         active={orderBy === 'description'}
                         direction={orderBy === 'description' ? order : 'asc'}
@@ -695,7 +697,7 @@ const CodeTransactions: React.FC = () => {
                         Description
                       </TableSortLabel>
                     </TableCell>
-                    <TableCell align="right" sx={{ minWidth: 100 }}>
+                    <TableCell align="right" sx={{ width: 100 }}>
                       <TableSortLabel
                         active={orderBy === 'amount'}
                         direction={orderBy === 'amount' ? order : 'asc'}
@@ -704,7 +706,7 @@ const CodeTransactions: React.FC = () => {
                         Amount
                       </TableSortLabel>
                     </TableCell>
-                    <TableCell sx={{ minWidth: 100 }}>
+                    <TableCell sx={{ width: 100 }}>
                       <TableSortLabel
                         active={orderBy === 'status'}
                         direction={orderBy === 'status' ? order : 'asc'}
@@ -713,8 +715,8 @@ const CodeTransactions: React.FC = () => {
                         Status
                       </TableSortLabel>
                     </TableCell>
-                    <TableCell sx={{ minWidth: 400 }}>Coding</TableCell>
-                    <TableCell align="center" sx={{ minWidth: 120 }}>Actions</TableCell>
+                    <TableCell>Coding</TableCell>
+                    <TableCell align="center" sx={{ width: 80 }}>Actions</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -793,7 +795,7 @@ const CodeTransactions: React.FC = () => {
                       </TableCell>
                       <TableCell>
                         {!transaction.coding_type || selectedCodingTypes[transaction.id] ? (
-                          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', flexWrap: 'wrap' }}>
                             <ToggleButtonGroup
                               value={selectedCodingTypes[transaction.id] || null}
                               exclusive
@@ -811,23 +813,23 @@ const CodeTransactions: React.FC = () => {
                               }}
                               size="small"
                             >
-                              <ToggleButton value="gl_account" sx={{ px: 1, py: 0.5 }}>
-                                <Business sx={{ fontSize: 16, mr: 0.5 }} />
+                              <ToggleButton value="gl_account" sx={{ px: 0.75, py: 0.25, fontSize: '0.75rem' }}>
+                                <Business sx={{ fontSize: 16, mr: 0.25 }} />
                                 GL
                               </ToggleButton>
-                              <ToggleButton value="job" sx={{ px: 1, py: 0.5 }}>
-                                <Work sx={{ fontSize: 16, mr: 0.5 }} />
+                              <ToggleButton value="job" sx={{ px: 0.75, py: 0.25, fontSize: '0.75rem' }}>
+                                <Work sx={{ fontSize: 16, mr: 0.25 }} />
                                 Job
                               </ToggleButton>
-                              <ToggleButton value="equipment" sx={{ px: 1, py: 0.5 }}>
-                                <Build sx={{ fontSize: 16, mr: 0.5 }} />
+                              <ToggleButton value="equipment" sx={{ px: 0.75, py: 0.25, fontSize: '0.75rem' }}>
+                                <Build sx={{ fontSize: 16, mr: 0.25 }} />
                                 Equip
                               </ToggleButton>
                             </ToggleButtonGroup>
                             
                             {selectedCodingTypes[transaction.id] === 'gl_account' && (
                               <>
-                                <FormControl size="small" sx={{ minWidth: 100 }}>
+                                <FormControl size="small" sx={{ minWidth: 90 }}>
                                   <Select
                                     value={inlineCoding[transaction.id]?.selectedCompany || ''}
                                     onChange={(e) => {
@@ -852,7 +854,7 @@ const CodeTransactions: React.FC = () => {
                                   </Select>
                                 </FormControl>
                                 {inlineCoding[transaction.id]?.selectedCompany && (
-                                  <FormControl size="small" sx={{ minWidth: 120 }}>
+                                  <FormControl size="small" sx={{ minWidth: 110 }}>
                                     <Select
                                       value={inlineCoding[transaction.id]?.selectedGlAccount || ''}
                                       onChange={(e) => {
@@ -882,7 +884,7 @@ const CodeTransactions: React.FC = () => {
                             )}
                             
                             {selectedCodingTypes[transaction.id] === 'job' && (
-                              <FormControl size="small" sx={{ minWidth: 150 }}>
+                              <FormControl size="small" sx={{ minWidth: 140 }}>
                                 <Select
                                   value={inlineCoding[transaction.id]?.selectedJob || ''}
                                   onChange={(e) => {
@@ -908,7 +910,7 @@ const CodeTransactions: React.FC = () => {
                             )}
                             
                             {selectedCodingTypes[transaction.id] === 'equipment' && (
-                              <FormControl size="small" sx={{ minWidth: 150 }}>
+                              <FormControl size="small" sx={{ minWidth: 140 }}>
                                 <Select
                                   value={inlineCoding[transaction.id]?.selectedEquipment || ''}
                                   onChange={(e) => {

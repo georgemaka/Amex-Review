@@ -61,7 +61,7 @@ const Dashboard: React.FC = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>
+      <Typography variant="h4" gutterBottom sx={{ mt: 0 }}>
         {getWelcomeMessage()}, {user?.first_name}!
       </Typography>
       <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>

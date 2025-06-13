@@ -18,14 +18,15 @@ const Layout: React.FC = () => {
       <Box
         component="main"
         sx={{
-          flexGrow: 1,
-          px: 3,
-          py: 3,
-          width: { sm: `calc(100% - 200px)` },
-          ml: { sm: '200px' },
-          mt: '64px',
-          height: 'calc(100vh - 64px)',
+          position: 'fixed',
+          left: { xs: 0, sm: 200 },
+          right: 0,
+          top: 64,
+          bottom: 0,
           overflow: 'auto',
+          pl: 2,
+          pr: 2,
+          py: 2,
           backgroundColor: 'background.default',
         }}
       >
