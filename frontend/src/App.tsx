@@ -9,7 +9,6 @@ import PrivateRoute from './components/common/PrivateRoute';
 import Login from './components/auth/Login';
 import Dashboard from './components/dashboard/Dashboard';
 import StatementList from './components/statements/StatementList';
-import StatementUpload from './components/statements/StatementUpload';
 import StatementDetail from './components/statements/StatementDetail';
 import CodingInterface from './components/coding/CodingInterface';
 import UserManagement from './components/admin/UserManagement';
@@ -51,7 +50,6 @@ function App() {
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/statements" element={<StatementList />} />
-            <Route path="/statements/upload" element={<StatementUpload />} />
             <Route path="/statements/:id" element={<StatementDetail />} />
             <Route path="/coding/:statementId" element={<CodingInterface />} />
             <Route path="/analytics" element={<AnalyticsDashboard />} />

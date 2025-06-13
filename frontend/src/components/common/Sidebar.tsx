@@ -15,7 +15,6 @@ import {
 import {
   Dashboard,
   Description,
-  CloudUpload,
   Code,
   People,
   CreditCard,
@@ -48,12 +47,6 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onDrawerToggle }) => {
       icon: <Description />,
       path: '/statements',
       roles: ['admin', 'coder', 'reviewer', 'viewer'],
-    },
-    {
-      text: 'Upload Statement',
-      icon: <CloudUpload />,
-      path: '/statements/upload',
-      roles: ['admin'],
     },
     {
       text: 'Code Transactions',

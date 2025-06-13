@@ -1,20 +1,28 @@
 import React, { useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { Formik, Form } from 'formik';
 import * as Yup from 'yup';
 import {
   Box,
   Button,
-  Paper,
   TextField,
   Typography,
   Grid,
   Alert,
   CircularProgress,
   MenuItem,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  IconButton,
 } from '@mui/material';
-import { CloudUpload, Cancel, Description, InsertDriveFile } from '@mui/icons-material';
+import { 
+  CloudUpload, 
+  Close, 
+  Description, 
+  InsertDriveFile 
+} from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -104,11 +112,15 @@ const FileDropZone: React.FC<FileDropZoneProps> = ({ file, accept, onFileSelect,
         borderStyle: 'dashed',
         borderColor: isDragging ? 'primary.main' : error ? 'error.main' : 'divider',
         borderRadius: 1,
-        p: 3,
+        p: 2,
         textAlign: 'center',
         backgroundColor: isDragging ? 'action.hover' : 'background.paper',
         cursor: 'pointer',
         transition: 'all 0.2s ease',
+        minHeight: 120,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
         '&:hover': {
           borderColor: 'primary.main',
           backgroundColor: 'action.hover',
@@ -117,7 +129,7 @@ const FileDropZone: React.FC<FileDropZoneProps> = ({ file, accept, onFileSelect,
     >
       <input
         type="file"
-        id={`file-input-${fileType}`}
+        id={`modal-file-input-${fileType}`}
         hidden
         accept={accept}
         onChange={(e) => {
@@ -125,15 +137,15 @@ const FileDropZone: React.FC<FileDropZoneProps> = ({ file, accept, onFileSelect,
           if (file) onFileSelect(file);
         }}
       />
-      <label htmlFor={`file-input-${fileType}`} style={{ cursor: 'pointer' }}>
+      <label htmlFor={`modal-file-input-${fileType}`} style={{ cursor: 'pointer', width: '100%' }}>
         {file ? (
           <Box>
             {fileType === 'PDF' ? (
-              <Description sx={{ fontSize: 48, color: 'error.main', mb: 1 }} />
+              <Description sx={{ fontSize: 40, color: 'error.main', mb: 1 }} />
             ) : (
-              <InsertDriveFile sx={{ fontSize: 48, color: 'success.main', mb: 1 }} />
+              <InsertDriveFile sx={{ fontSize: 40, color: 'success.main', mb: 1 }} />
             )}
-            <Typography variant="body1" fontWeight="medium">
+            <Typography variant="body2" fontWeight="medium">
               {file.name}
             </Typography>
             <Typography variant="caption" color="text.secondary">
@@ -142,12 +154,12 @@ const FileDropZone: React.FC<FileDropZoneProps> = ({ file, accept, onFileSelect,
           </Box>
         ) : (
           <Box>
-            <CloudUpload sx={{ fontSize: 48, color: 'action.disabled', mb: 1 }} />
-            <Typography variant="body1" gutterBottom>
-              Drag and drop your {fileType} file here
+            <CloudUpload sx={{ fontSize: 40, color: 'action.disabled', mb: 1 }} />
+            <Typography variant="body2" gutterBottom>
+              Drop {fileType} here or click
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              or click to browse
+              {accept}
             </Typography>
           </Box>
         )}
@@ -161,8 +173,17 @@ const FileDropZone: React.FC<FileDropZoneProps> = ({ file, accept, onFileSelect,
   );
 };
 
-const StatementUpload: React.FC = () => {
-  const navigate = useNavigate();
+interface StatementUploadModalProps {
+  open: boolean;
+  onClose: () => void;
+  onSuccess?: () => void;
+}
+
+const StatementUploadModal: React.FC<StatementUploadModalProps> = ({ 
+  open, 
+  onClose,
+  onSuccess 
+}) => {
   const dispatch = useDispatch<AppDispatch>();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -170,7 +191,7 @@ const StatementUpload: React.FC = () => {
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
 
-  const handleSubmit = async (values: FormValues) => {
+  const handleSubmit = async (values: FormValues, { resetForm }: any) => {
     setIsSubmitting(true);
     setError(null);
 
@@ -189,7 +210,9 @@ const StatementUpload: React.FC = () => {
         message: 'Statement uploaded successfully. Processing will begin shortly.',
       }));
       
-      navigate('/statements');
+      resetForm();
+      onClose();
+      onSuccess?.();
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to upload statement');
     } finally {
@@ -199,36 +222,45 @@ const StatementUpload: React.FC = () => {
 
   return (
     <LocalizationProvider dateAdapter={AdapterDateFns}>
-      <Box>
-        <Typography variant="h4" gutterBottom>
-          Upload Statement
-        </Typography>
-        <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-          Upload American Express PDF and Excel statement files for processing
-        </Typography>
-
-        <Paper sx={{ p: 4 }}>
-          {error && (
-            <Alert severity="error" sx={{ mb: 3 }}>
-              {error}
-            </Alert>
-          )}
-
-          <Formik<FormValues>
-            initialValues={{
-              month: currentMonth,
-              year: currentYear,
-              closingDate: null,
-              pdfFile: null,
-              excelFile: null,
-            }}
-            validationSchema={validationSchema}
-            onSubmit={handleSubmit}
+      <Dialog 
+        open={open} 
+        onClose={isSubmitting ? undefined : onClose}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Typography variant="h6">Upload Statement</Typography>
+          <IconButton
+            onClick={onClose}
+            disabled={isSubmitting}
+            size="small"
           >
-            {({ values, errors, touched, setFieldValue }) => (
-              <Form>
+            <Close />
+          </IconButton>
+        </DialogTitle>
+        
+        <Formik<FormValues>
+          initialValues={{
+            month: currentMonth,
+            year: currentYear,
+            closingDate: null,
+            pdfFile: null,
+            excelFile: null,
+          }}
+          validationSchema={validationSchema}
+          onSubmit={handleSubmit}
+        >
+          {({ values, errors, touched, setFieldValue }) => (
+            <Form>
+              <DialogContent dividers>
+                {error && (
+                  <Alert severity="error" sx={{ mb: 2 }}>
+                    {error}
+                  </Alert>
+                )}
+
                 <Grid container spacing={3}>
-                  <Grid item xs={12} md={6}>
+                  <Grid item xs={12} sm={4}>
                     <TextField
                       fullWidth
                       select
@@ -238,6 +270,7 @@ const StatementUpload: React.FC = () => {
                       onChange={(e) => setFieldValue('month', e.target.value)}
                       error={touched.month && Boolean(errors.month)}
                       helperText={touched.month && errors.month}
+                      size="small"
                     >
                       {[...Array(12)].map((_, i) => (
                         <MenuItem key={i + 1} value={i + 1}>
@@ -247,7 +280,7 @@ const StatementUpload: React.FC = () => {
                     </TextField>
                   </Grid>
 
-                  <Grid item xs={12} md={6}>
+                  <Grid item xs={12} sm={4}>
                     <TextField
                       fullWidth
                       name="year"
@@ -258,10 +291,11 @@ const StatementUpload: React.FC = () => {
                       error={touched.year && Boolean(errors.year)}
                       helperText={touched.year && errors.year}
                       inputProps={{ min: 2020, max: currentYear }}
+                      size="small"
                     />
                   </Grid>
 
-                  <Grid item xs={12}>
+                  <Grid item xs={12} sm={4}>
                     <DatePicker
                       label="Closing Date"
                       value={values.closingDate}
@@ -269,6 +303,7 @@ const StatementUpload: React.FC = () => {
                       slotProps={{
                         textField: {
                           fullWidth: true,
+                          size: 'small',
                           error: touched.closingDate && Boolean(errors.closingDate),
                           helperText: touched.closingDate && errors.closingDate?.toString(),
                         },
@@ -277,62 +312,64 @@ const StatementUpload: React.FC = () => {
                   </Grid>
 
                   <Grid item xs={12} md={6}>
-                    <Box>
-                      <Typography variant="subtitle1" gutterBottom>
-                        PDF Statement File
-                      </Typography>
-                      <FileDropZone
-                        file={values.pdfFile}
-                        accept=".pdf"
-                        onFileSelect={(file) => setFieldValue('pdfFile', file)}
-                        error={touched.pdfFile && errors.pdfFile ? String(errors.pdfFile) : undefined}
-                        fileType="PDF"
-                      />
-                    </Box>
+                    <Typography variant="subtitle2" gutterBottom sx={{ mb: 1 }}>
+                      PDF Statement File
+                    </Typography>
+                    <FileDropZone
+                      file={values.pdfFile}
+                      accept=".pdf"
+                      onFileSelect={(file) => setFieldValue('pdfFile', file)}
+                      error={touched.pdfFile && errors.pdfFile ? String(errors.pdfFile) : undefined}
+                      fileType="PDF"
+                    />
                   </Grid>
 
                   <Grid item xs={12} md={6}>
-                    <Box>
-                      <Typography variant="subtitle1" gutterBottom>
-                        Excel Statement File
-                      </Typography>
-                      <FileDropZone
-                        file={values.excelFile}
-                        accept=".xlsx,.xls"
-                        onFileSelect={(file) => setFieldValue('excelFile', file)}
-                        error={touched.excelFile && errors.excelFile ? String(errors.excelFile) : undefined}
-                        fileType="Excel"
-                      />
-                    </Box>
+                    <Typography variant="subtitle2" gutterBottom sx={{ mb: 1 }}>
+                      Excel Statement File
+                    </Typography>
+                    <FileDropZone
+                      file={values.excelFile}
+                      accept=".xlsx,.xls"
+                      onFileSelect={(file) => setFieldValue('excelFile', file)}
+                      error={touched.excelFile && errors.excelFile ? String(errors.excelFile) : undefined}
+                      fileType="Excel"
+                    />
                   </Grid>
 
                   <Grid item xs={12}>
-                    <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end' }}>
-                      <Button
-                        variant="outlined"
-                        onClick={() => navigate('/statements')}
-                        startIcon={<Cancel />}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        type="submit"
-                        variant="contained"
-                        disabled={isSubmitting}
-                        startIcon={isSubmitting ? <CircularProgress size={20} /> : <CloudUpload />}
-                      >
-                        {isSubmitting ? 'Uploading...' : 'Upload Statement'}
-                      </Button>
-                    </Box>
+                    <Alert severity="info" variant="outlined">
+                      <Typography variant="caption">
+                        <strong>Note:</strong> You can upload multiple statements for the same month/year as long as they have different filenames.
+                        The system will process and split them by cardholder automatically.
+                      </Typography>
+                    </Alert>
                   </Grid>
                 </Grid>
-              </Form>
-            )}
-          </Formik>
-        </Paper>
-      </Box>
+              </DialogContent>
+
+              <DialogActions sx={{ px: 3, py: 2 }}>
+                <Button
+                  onClick={onClose}
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="contained"
+                  disabled={isSubmitting}
+                  startIcon={isSubmitting ? <CircularProgress size={20} /> : <CloudUpload />}
+                >
+                  {isSubmitting ? 'Uploading...' : 'Upload Statement'}
+                </Button>
+              </DialogActions>
+            </Form>
+          )}
+        </Formik>
+      </Dialog>
     </LocalizationProvider>
   );
 };
 
-export default StatementUpload;
+export default StatementUploadModal;

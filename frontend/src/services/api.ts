@@ -102,21 +102,33 @@ class ApiService {
   }
 
   async getStatement(id: number) {
+    if (!id || isNaN(id)) {
+      throw new Error(`Invalid statement ID: ${id}`);
+    }
     const response = await this.api.get(`/statements/${id}`);
     return response.data;
   }
 
   async getStatementProgress(id: number) {
+    if (!id || isNaN(id)) {
+      throw new Error(`Invalid statement ID: ${id}`);
+    }
     const response = await this.api.get(`/statements/${id}/progress`);
     return response.data;
   }
 
   async sendStatementEmails(id: number) {
+    if (!id || isNaN(id)) {
+      throw new Error(`Invalid statement ID: ${id}`);
+    }
     const response = await this.api.post(`/statements/${id}/send-emails`);
     return response.data;
   }
 
   async deleteStatement(id: number) {
+    if (!id || isNaN(id)) {
+      throw new Error(`Invalid statement ID: ${id}`);
+    }
     const response = await this.api.delete(`/statements/${id}`);
     return response.data;
   }

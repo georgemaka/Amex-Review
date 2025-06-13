@@ -58,15 +58,26 @@ const StatementDetail: React.FC = () => {
   const [downloadingZip, setDownloadingZip] = useState(false);
 
   useEffect(() => {
-    loadStatementData();
+    if (id && !isNaN(parseInt(id))) {
+      loadStatementData();
+    } else {
+      console.error('Invalid statement ID:', id);
+      setLoading(false);
+    }
   }, [id]);
 
   const loadStatementData = async () => {
+    if (!id || isNaN(parseInt(id))) {
+      console.error('Invalid statement ID:', id);
+      return;
+    }
+    
     try {
       setLoading(true);
+      const statementId = parseInt(id);
       const [statementData, progressData] = await Promise.all([
-        api.getStatement(parseInt(id!)),
-        api.getStatementProgress(parseInt(id!))
+        api.getStatement(statementId),
+        api.getStatementProgress(statementId)
       ]);
       setStatement(statementData);
       setProgress(progressData);
@@ -223,6 +234,21 @@ const StatementDetail: React.FC = () => {
       console.error('Failed to export CSV:', error);
     }
   };
+
+  if (!id || isNaN(parseInt(id))) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Typography color="error">Invalid statement ID</Typography>
+        <Button
+          startIcon={<ArrowBack />}
+          onClick={() => navigate('/statements')}
+          sx={{ mt: 2 }}
+        >
+          Back to Statements
+        </Button>
+      </Box>
+    );
+  }
 
   if (loading) {
     return (

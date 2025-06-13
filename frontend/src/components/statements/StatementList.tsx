@@ -30,11 +30,13 @@ import {
   Download,
   Assignment,
   Delete,
+  Refresh,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { RootState, AppDispatch } from '../../store';
 import { fetchStatements, deleteStatement } from '../../store/slices/statementSlice';
 import { addNotification } from '../../store/slices/uiSlice';
+import StatementUploadModal from './StatementUploadModal';
 
 const StatementList: React.FC = () => {
   const navigate = useNavigate();
@@ -46,10 +48,66 @@ const StatementList: React.FC = () => {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [statementToDelete, setStatementToDelete] = useState<number | null>(null);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
+  const [processingStatements, setProcessingStatements] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     dispatch(fetchStatements({ skip: page * rowsPerPage, limit: rowsPerPage }));
   }, [dispatch, page, rowsPerPage]);
+
+  // Set up polling for processing statements
+  useEffect(() => {
+    // Track current processing statements
+    const currentProcessing = new Set<number>();
+    statements.forEach(stmt => {
+      if (stmt.status === 'processing' || stmt.status === 'pending') {
+        currentProcessing.add(stmt.id);
+      }
+    });
+
+    // Check if any statements just finished processing
+    processingStatements.forEach(id => {
+      const stmt = statements.find(s => s.id === id);
+      if (stmt && stmt.status !== 'processing' && stmt.status !== 'pending') {
+        // Statement finished processing
+        if (stmt.status === 'split') {
+          dispatch(addNotification({
+            message: `Statement for ${stmt.month}/${stmt.year} has been processed successfully!`,
+            type: 'success',
+          }));
+        } else if (stmt.status === 'error') {
+          dispatch(addNotification({
+            message: `Statement for ${stmt.month}/${stmt.year} failed to process. Check logs for details.`,
+            type: 'error',
+          }));
+        }
+      }
+    });
+
+    // Update tracking set
+    setProcessingStatements(currentProcessing);
+
+    // Set up polling
+    if (currentProcessing.size > 0 && !pollingInterval) {
+      // Start polling every 3 seconds
+      const interval = setInterval(() => {
+        dispatch(fetchStatements({ skip: page * rowsPerPage, limit: rowsPerPage }));
+      }, 3000);
+      setPollingInterval(interval);
+    } else if (currentProcessing.size === 0 && pollingInterval) {
+      // Stop polling when no statements are processing
+      clearInterval(pollingInterval);
+      setPollingInterval(null);
+    }
+
+    // Cleanup on unmount
+    return () => {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+      }
+    };
+  }, [statements, pollingInterval, processingStatements, dispatch, page, rowsPerPage]);
 
   const handleChangePage = (event: unknown, newPage: number) => {
     setPage(newPage);
@@ -146,7 +204,7 @@ const StatementList: React.FC = () => {
           <Button
             variant="contained"
             startIcon={<Add />}
-            onClick={() => navigate('/statements/upload')}
+            onClick={() => setUploadModalOpen(true)}
           >
             Upload Statement
           </Button>
@@ -182,11 +240,23 @@ const StatementList: React.FC = () => {
                   <TableCell>{statement.pdf_filename}</TableCell>
                   <TableCell>{statement.excel_filename}</TableCell>
                   <TableCell>
-                    <Chip
-                      label={statement.status.replace('_', ' ').toUpperCase()}
-                      size="small"
-                      color={getStatusColor(statement.status)}
-                    />
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Chip
+                        label={statement.status.replace('_', ' ').toUpperCase()}
+                        size="small"
+                        color={getStatusColor(statement.status)}
+                        icon={
+                          (statement.status === 'processing' || statement.status === 'pending') ? 
+                          <Refresh sx={{ animation: 'spin 2s linear infinite' }} /> : 
+                          undefined
+                        }
+                      />
+                      {(statement.status === 'processing' || statement.status === 'pending') && (
+                        <Typography variant="caption" color="text.secondary">
+                          Auto-updating...
+                        </Typography>
+                      )}
+                    </Box>
                   </TableCell>
                   <TableCell>
                     {format(new Date(statement.created_at), 'MMM dd, yyyy')}
@@ -303,6 +373,16 @@ const StatementList: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Upload Statement Modal */}
+      <StatementUploadModal
+        open={uploadModalOpen}
+        onClose={() => setUploadModalOpen(false)}
+        onSuccess={() => {
+          // Refresh the statements list after successful upload
+          dispatch(fetchStatements({ skip: page * rowsPerPage, limit: rowsPerPage }));
+        }}
+      />
     </Box>
   );
 };

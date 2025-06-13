@@ -378,3 +378,127 @@ class AnalyticsProcessor:
         except Exception as e:
             logger.error(f"Error processing analytics for statement {statement_id}: {str(e)}")
             raise
+
+
+# Sync version for use in Celery tasks
+def process_statement_analytics_sync(db, statement_id: int):
+    """
+    Synchronous wrapper for analytics processing in Celery tasks.
+    This avoids asyncio event loop issues in Celery workers.
+    """
+    from sqlalchemy.orm import Session
+    
+    try:
+        logger.info(f"Processing analytics for statement {statement_id} (sync)")
+        
+        # Get all transactions for the statement
+        transactions = db.query(Transaction)\
+            .join(CardholderStatement)\
+            .filter(CardholderStatement.statement_id == statement_id)\
+            .all()
+        
+        logger.info(f"Found {len(transactions)} transactions to process")
+        
+        # Load categories and mappings
+        categories = db.query(SpendingCategory).filter(SpendingCategory.is_active == True).all()
+        category_dict = {cat.id: cat for cat in categories}
+        
+        mappings = db.query(MerchantMapping).all()
+        
+        # Categorize transactions
+        categorized_count = 0
+        for transaction in transactions:
+            if transaction.category_id:
+                continue  # Already categorized
+                
+            search_text = f"{transaction.merchant_name or ''} {transaction.description}".upper()
+            
+            # Find best matching merchant mapping
+            best_match = None
+            best_confidence = 0.0
+            
+            for mapping in mappings:
+                pattern = mapping.merchant_pattern.upper()
+                if pattern in search_text:
+                    if mapping.confidence > best_confidence:
+                        best_match = mapping
+                        best_confidence = mapping.confidence
+            
+            if best_match and best_confidence >= 0.7:
+                transaction.category_id = best_match.category_id
+                categorized_count += 1
+        
+        db.commit()
+        logger.info(f"Categorized {categorized_count} transactions")
+        
+        # Calculate analytics
+        # Get statement details
+        stmt = db.query(CardholderStatement).filter(
+            CardholderStatement.statement_id == statement_id
+        ).first()
+        
+        if not stmt:
+            logger.error(f"No cardholder statements found for statement {statement_id}")
+            return
+        
+        month = stmt.statement.month
+        year = stmt.statement.year
+        
+        # Delete existing analytics for this period
+        db.query(SpendingAnalytics).filter(
+            SpendingAnalytics.month == month,
+            SpendingAnalytics.year == year
+        ).delete()
+        
+        # Calculate spending by category
+        category_spending = db.query(
+            Transaction.category_id,
+            func.sum(Transaction.amount).label('total_amount'),
+            func.count(Transaction.id).label('transaction_count')
+        ).join(CardholderStatement)\
+        .filter(CardholderStatement.statement_id == statement_id)\
+        .group_by(Transaction.category_id)\
+        .all()
+        
+        # Calculate spending by cardholder
+        cardholder_spending = db.query(
+            CardholderStatement.cardholder_id,
+            func.sum(Transaction.amount).label('total_amount'),
+            func.count(Transaction.id).label('transaction_count')
+        ).join(Transaction)\
+        .filter(CardholderStatement.statement_id == statement_id)\
+        .group_by(CardholderStatement.cardholder_id)\
+        .all()
+        
+        # Create analytics records
+        for category_id, amount, count in category_spending:
+            if category_id:  # Skip uncategorized
+                analytics = SpendingAnalytics(
+                    month=month,
+                    year=year,
+                    category_id=category_id,
+                    total_amount=float(amount),
+                    transaction_count=count,
+                    average_transaction=float(amount) / count if count > 0 else 0
+                )
+                db.add(analytics)
+        
+        # Create cardholder analytics
+        for cardholder_id, amount, count in cardholder_spending:
+            analytics = SpendingAnalytics(
+                month=month,
+                year=year,
+                cardholder_id=cardholder_id,
+                total_amount=float(amount),
+                transaction_count=count,
+                average_transaction=float(amount) / count if count > 0 else 0
+            )
+            db.add(analytics)
+        
+        db.commit()
+        logger.info(f"Analytics calculation completed for statement {statement_id}")
+        
+    except Exception as e:
+        logger.error(f"Error in sync analytics processing: {str(e)}")
+        db.rollback()
+        raise

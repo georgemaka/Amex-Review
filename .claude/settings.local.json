@@ -20,7 +20,10 @@
       "Bash(python test_pdf_split.py:*)",
       "Bash(docker cp:*)",
       "Bash(rm:*)",
-      "Bash(npm start)"
+      "Bash(npm start)",
+      "Bash(rm:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ],
     "deny": []
   }

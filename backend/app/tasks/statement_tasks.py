@@ -166,20 +166,13 @@ def process_statement_task(self, statement_id: int) -> Dict:
             }
         )
         
-        # Process analytics
+        # Process analytics using sync session
         try:
-            from sqlalchemy.ext.asyncio import AsyncSession
-            from app.db.session import async_session
+            # Use sync session for analytics processor in Celery context
+            from app.services.analytics_processor import process_statement_analytics_sync
             
-            # Create async session for analytics processor
-            async def process_analytics():
-                async with async_session() as async_db:
-                    analytics_processor = AnalyticsProcessor(async_db)
-                    await analytics_processor.process_statement_analytics(statement_id)
-            
-            # Run async function
-            import asyncio
-            asyncio.run(process_analytics())
+            with SessionLocal() as db:
+                process_statement_analytics_sync(db, statement_id)
             
             logger.info(f"Analytics processed for statement {statement_id}")
         except Exception as e:
