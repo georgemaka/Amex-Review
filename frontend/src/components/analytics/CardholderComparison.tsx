@@ -20,7 +20,7 @@ import {
   Person,
 } from '@mui/icons-material';
 import { RootState, AppDispatch } from '../../store';
-import { fetchCardholderSpending } from '../../store/slices/analyticsSlice';
+import { fetchCardholderSpending, CardholderSpending } from '../../store/slices/analyticsSlice';
 
 const CardholderComparison: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
@@ -63,7 +63,7 @@ const CardholderComparison: React.FC = () => {
     }
   };
 
-  const maxAmount = Math.max(...cardholderSpending.map(c => c.total_amount), 1);
+  const maxAmount = Math.max(...cardholderSpending.map((c: CardholderSpending) => c.total_amount), 1);
 
   return (
     <TableContainer sx={{ maxHeight: 400 }}>
@@ -79,7 +79,7 @@ const CardholderComparison: React.FC = () => {
           </TableRow>
         </TableHead>
         <TableBody>
-          {cardholderSpending.map((cardholder) => (
+          {cardholderSpending.map((cardholder: CardholderSpending) => (
             <TableRow key={cardholder.cardholder_id} hover>
               <TableCell>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

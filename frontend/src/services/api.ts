@@ -410,6 +410,27 @@ class ApiService {
     return response.data;
   }
 
+  // Generic HTTP methods
+  async get(url: string, config?: any) {
+    const response = await this.api.get(url, config);
+    return response.data;
+  }
+
+  async post(url: string, data?: any, config?: any) {
+    const response = await this.api.post(url, data, config);
+    return response.data;
+  }
+
+  async put(url: string, data?: any, config?: any) {
+    const response = await this.api.put(url, data, config);
+    return response.data;
+  }
+
+  async delete(url: string, config?: any) {
+    const response = await this.api.delete(url, config);
+    return response.data;
+  }
+
 }
 
 export default new ApiService();

@@ -9,10 +9,35 @@ export interface Transaction {
   description: string;
   amount: number;
   merchant_name?: string;
+  category_id?: number;
+  
+  // Coding fields
+  company_id?: number;
+  gl_account_id?: number;
+  job_id?: number;
+  job_phase_id?: number;
+  job_cost_type_id?: number;
+  equipment_id?: number;
+  equipment_cost_code_id?: number;
+  equipment_cost_type_id?: number;
+  coding_type?: string;
+  
+  // Legacy fields (for backward compatibility)
   gl_account?: string;
   job_code?: string;
   phase?: string;
   cost_type?: string;
+  
+  // Relationships
+  company?: any;
+  gl_account_rel?: any;
+  job?: any;
+  job_phase?: any;
+  job_cost_type?: any;
+  equipment?: any;
+  equipment_cost_code?: any;
+  equipment_cost_type?: any;
+  
   notes?: string;
   status: 'uncoded' | 'coded' | 'reviewed' | 'rejected' | 'exported';
   coded_at?: string;

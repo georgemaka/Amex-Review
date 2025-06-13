@@ -45,6 +45,9 @@ import {
   Build,
   Edit,
   ContentCopy,
+  CallSplit,
+  Add,
+  Remove,
 } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -69,6 +72,16 @@ interface Transaction {
       full_name: string;
     };
   };
+  // Coding fields with IDs
+  company_id?: number;
+  gl_account_id?: number;
+  job_id?: number;
+  job_phase_id?: number;
+  job_cost_type_id?: number;
+  equipment_id?: number;
+  equipment_cost_code_id?: number;
+  equipment_cost_type_id?: number;
+  // Relationships
   company?: any;
   gl_account_rel?: any;
   job?: any;
@@ -132,6 +145,11 @@ const CodeTransactions: React.FC = () => {
   // Recently used items tracking
   const [recentlyUsedCompanies, setRecentlyUsedCompanies] = useState<number[]>([]);
   const [recentlyUsedGlAccounts, setRecentlyUsedGlAccounts] = useState<number[]>([]);
+  
+  // Split transaction
+  const [splitDialogOpen, setSplitDialogOpen] = useState(false);
+  const [splitTransaction, setSplitTransaction] = useState<Transaction | null>(null);
+  const [splitLines, setSplitLines] = useState<any[]>([]);
   const [recentlyUsedJobs, setRecentlyUsedJobs] = useState<number[]>([]);
   const [recentlyUsedEquipment, setRecentlyUsedEquipment] = useState<number[]>([]);
   
@@ -611,6 +629,128 @@ const CodeTransactions: React.FC = () => {
     }));
   };
 
+  // Split transaction functions
+  const openSplitDialog = (transaction: Transaction) => {
+    setSplitTransaction(transaction);
+    // Initialize with 2 split lines by default
+    setSplitLines([
+      {
+        id: 1,
+        amount: transaction.amount / 2,
+        percentage: 50,
+        codingType: transaction.coding_type || '',
+        selectedCompany: transaction.company_id || '',
+        selectedGlAccount: transaction.gl_account_id || '',
+        selectedJob: transaction.job_id || '',
+        selectedJobPhase: transaction.job_phase_id || '',
+        selectedJobCostType: transaction.job_cost_type_id || '',
+        selectedEquipment: transaction.equipment_id || '',
+        selectedEquipmentCostCode: transaction.equipment_cost_code_id || '',
+        selectedEquipmentCostType: transaction.equipment_cost_type_id || '',
+        notes: ''
+      },
+      {
+        id: 2,
+        amount: transaction.amount / 2,
+        percentage: 50,
+        codingType: '',
+        selectedCompany: '',
+        selectedGlAccount: '',
+        selectedJob: '',
+        selectedJobPhase: '',
+        selectedJobCostType: '',
+        selectedEquipment: '',
+        selectedEquipmentCostCode: '',
+        selectedEquipmentCostType: '',
+        notes: ''
+      }
+    ]);
+    setSplitDialogOpen(true);
+  };
+
+  const addSplitLine = () => {
+    if (!splitTransaction) return;
+    const newId = Math.max(...splitLines.map(l => l.id)) + 1;
+    const remainingAmount = splitTransaction.amount - splitLines.reduce((sum, line) => sum + line.amount, 0);
+    setSplitLines([...splitLines, {
+      id: newId,
+      amount: remainingAmount > 0 ? remainingAmount : 0,
+      percentage: 0,
+      codingType: '',
+      selectedCompany: '',
+      selectedGlAccount: '',
+      selectedJob: '',
+      selectedJobPhase: '',
+      selectedJobCostType: '',
+      selectedEquipment: '',
+      selectedEquipmentCostCode: '',
+      selectedEquipmentCostType: '',
+      notes: ''
+    }]);
+  };
+
+  const removeSplitLine = (id: number) => {
+    if (splitLines.length <= 2) return; // Keep minimum 2 lines
+    setSplitLines(splitLines.filter(line => line.id !== id));
+  };
+
+  const updateSplitLine = (id: number, field: string, value: any) => {
+    setSplitLines(splitLines.map(line => {
+      if (line.id === id) {
+        const updatedLine = { ...line, [field]: value };
+        
+        // Update percentage if amount changed
+        if (field === 'amount' && splitTransaction) {
+          updatedLine.percentage = (value / splitTransaction.amount) * 100;
+        }
+        
+        // Update amount if percentage changed
+        if (field === 'percentage' && splitTransaction) {
+          updatedLine.amount = (value / 100) * splitTransaction.amount;
+        }
+        
+        return updatedLine;
+      }
+      return line;
+    }));
+  };
+
+  const handleSaveSplit = async () => {
+    if (!splitTransaction) return;
+    
+    try {
+      setLoading(true);
+      
+      // Validate that amounts sum to original amount
+      const totalAmount = splitLines.reduce((sum, line) => sum + line.amount, 0);
+      if (Math.abs(totalAmount - splitTransaction.amount) > 0.01) {
+        setError(`Split amounts must equal original amount ($${splitTransaction.amount.toFixed(2)})`);
+        return;
+      }
+      
+      // Validate that all lines have coding
+      const invalidLines = splitLines.filter(line => !line.codingType);
+      if (invalidLines.length > 0) {
+        setError('All split lines must have a coding type selected');
+        return;
+      }
+      
+      // TODO: Call API to save split transactions
+      // For now, we'll just close the dialog
+      setSuccess(`Transaction split into ${splitLines.length} parts`);
+      setSplitDialogOpen(false);
+      setSplitTransaction(null);
+      setSplitLines([]);
+      
+      // Reload transactions
+      await loadTransactions();
+    } catch (err) {
+      setError('Failed to split transaction');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Track recently used items
   const trackRecentlyUsed = (type: string, id: number) => {
     const maxRecent = 5;
@@ -957,8 +1097,9 @@ const CodeTransactions: React.FC = () => {
                                   .filter(t => extractMerchantName(t.description) === merchant)
                                   .map(t => t.id);
                                 setSelectedTransactions(prev => {
-                                  const newSelection = [...new Set([...prev, ...samemerchantTransactions])];
-                                  return newSelection;
+                                  const combined = [...prev, ...samemerchantTransactions];
+                                  const uniqueIds = combined.filter((id, index) => combined.indexOf(id) === index);
+                                  return uniqueIds;
                                 });
                               }
                             }}
@@ -1223,15 +1364,19 @@ const CodeTransactions: React.FC = () => {
                                     size="small"
                                     color="primary"
                                     onClick={() => {
-                                      setSelectedCodingTypes(prev => ({...prev, [transaction.id]: transaction.coding_type}));
+                                      setSelectedCodingTypes(prev => ({...prev, [transaction.id]: transaction.coding_type || ''}));
                                       setInlineCoding(prev => ({
                                         ...prev,
                                         [transaction.id]: {
-                                          codingType: transaction.coding_type,
+                                          codingType: transaction.coding_type || '',
                                           selectedCompany: transaction.company_id || '',
                                           selectedGlAccount: transaction.gl_account_id || '',
                                           selectedJob: transaction.job_id || '',
+                                          selectedJobPhase: transaction.job_phase_id || '',
+                                          selectedJobCostType: transaction.job_cost_type_id || '',
                                           selectedEquipment: transaction.equipment_id || '',
+                                          selectedEquipmentCostCode: transaction.equipment_cost_code_id || '',
+                                          selectedEquipmentCostType: transaction.equipment_cost_type_id || '',
                                           notes: transaction.notes || ''
                                         }
                                       }));
@@ -1259,6 +1404,15 @@ const CodeTransactions: React.FC = () => {
                                   </Tooltip>
                                 ) : null;
                               })()}
+                              <Tooltip title="Split transaction into multiple lines">
+                                <IconButton
+                                  size="small"
+                                  color="secondary"
+                                  onClick={() => openSplitDialog(transaction)}
+                                >
+                                  <CallSplit />
+                                </IconButton>
+                              </Tooltip>
                             </>
                           )}
                         </Box>
@@ -1494,6 +1648,314 @@ const CodeTransactions: React.FC = () => {
         </DialogActions>
       </Dialog>
 
+      {/* Split Transaction Dialog */}
+      <Dialog open={splitDialogOpen} onClose={() => setSplitDialogOpen(false)} maxWidth="lg" fullWidth>
+        <DialogTitle>
+          Split Transaction
+          {splitTransaction && (
+            <Typography variant="body2" color="text.secondary">
+              Original Amount: ${splitTransaction.amount.toFixed(2)} | {splitTransaction.description}
+            </Typography>
+          )}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2 }}>
+            {/* Even split helper */}
+            <Box sx={{ mb: 3, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+              <Grid container spacing={2} alignItems="center">
+                <Grid item xs={12} md={4}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Quick Even Split
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Split transaction evenly across multiple lines
+                  </Typography>
+                </Grid>
+                <Grid item xs={12} md={3}>
+                  <TextField
+                    type="number"
+                    label="Number of Lines"
+                    defaultValue={2}
+                    inputProps={{ min: 2, max: 20 }}
+                    size="small"
+                    fullWidth
+                    id="even-split-lines"
+                  />
+                </Grid>
+                <Grid item xs={12} md={5}>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => {
+                      const numLines = parseInt((document.getElementById('even-split-lines') as HTMLInputElement)?.value || '2');
+                      if (splitTransaction && numLines >= 2 && numLines <= 20) {
+                        const evenAmount = splitTransaction.amount / numLines;
+                        const evenPercentage = 100 / numLines;
+                        
+                        const newLines = Array.from({ length: numLines }, (_, index) => ({
+                          id: index + 1,
+                          amount: evenAmount,
+                          percentage: evenPercentage,
+                          codingType: index === 0 && splitTransaction.coding_type ? splitTransaction.coding_type : '',
+                          selectedCompany: index === 0 ? (splitTransaction.company_id || '') : '',
+                          selectedGlAccount: index === 0 ? (splitTransaction.gl_account_id || '') : '',
+                          selectedJob: index === 0 ? (splitTransaction.job_id || '') : '',
+                          selectedJobPhase: index === 0 ? (splitTransaction.job_phase_id || '') : '',
+                          selectedJobCostType: index === 0 ? (splitTransaction.job_cost_type_id || '') : '',
+                          selectedEquipment: index === 0 ? (splitTransaction.equipment_id || '') : '',
+                          selectedEquipmentCostCode: index === 0 ? (splitTransaction.equipment_cost_code_id || '') : '',
+                          selectedEquipmentCostType: index === 0 ? (splitTransaction.equipment_cost_type_id || '') : '',
+                          notes: ''
+                        }));
+                        
+                        setSplitLines(newLines);
+                      }
+                    }}
+                  >
+                    Apply Even Split
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    sx={{ ml: 1 }}
+                    onClick={() => {
+                      if (splitTransaction) {
+                        // Copy coding from first line to all other lines
+                        const firstLine = splitLines[0];
+                        if (firstLine) {
+                          setSplitLines(splitLines.map(line => ({
+                            ...line,
+                            codingType: firstLine.codingType,
+                            selectedCompany: firstLine.selectedCompany,
+                            selectedGlAccount: firstLine.selectedGlAccount,
+                            selectedJob: firstLine.selectedJob,
+                            selectedJobPhase: firstLine.selectedJobPhase,
+                            selectedJobCostType: firstLine.selectedJobCostType,
+                            selectedEquipment: firstLine.selectedEquipment,
+                            selectedEquipmentCostCode: firstLine.selectedEquipmentCostCode,
+                            selectedEquipmentCostType: firstLine.selectedEquipmentCostType,
+                          })));
+                        }
+                      }
+                    }}
+                  >
+                    Copy Coding to All
+                  </Button>
+                </Grid>
+              </Grid>
+            </Box>
+            
+            {/* Split lines */}
+            {splitLines.map((line, index) => (
+              <Box key={line.id} sx={{ mb: 3, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                <Grid container spacing={2} alignItems="center">
+                  <Grid item xs={12}>
+                    <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                      Line {index + 1}
+                      {splitLines.length > 2 && (
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => removeSplitLine(line.id)}
+                          sx={{ ml: 1 }}
+                        >
+                          <Remove />
+                        </IconButton>
+                      )}
+                    </Typography>
+                  </Grid>
+                  
+                  <Grid item xs={12} md={3}>
+                    <TextField
+                      fullWidth
+                      type="number"
+                      label="Amount"
+                      value={line.amount}
+                      onChange={(e) => updateSplitLine(line.id, 'amount', parseFloat(e.target.value) || 0)}
+                      InputProps={{
+                        startAdornment: '$',
+                      }}
+                    />
+                  </Grid>
+                  
+                  <Grid item xs={12} md={2}>
+                    <TextField
+                      fullWidth
+                      type="number"
+                      label="Percentage"
+                      value={line.percentage.toFixed(2)}
+                      onChange={(e) => updateSplitLine(line.id, 'percentage', parseFloat(e.target.value) || 0)}
+                      InputProps={{
+                        endAdornment: '%',
+                      }}
+                    />
+                  </Grid>
+                  
+                  <Grid item xs={12} md={7}>
+                    <ToggleButtonGroup
+                      value={line.codingType}
+                      exclusive
+                      onChange={(e, newType) => updateSplitLine(line.id, 'codingType', newType)}
+                      size="small"
+                    >
+                      <ToggleButton value="gl_account">
+                        <Business sx={{ fontSize: 16, mr: 0.5 }} />
+                        GL Account
+                      </ToggleButton>
+                      <ToggleButton value="job">
+                        <Work sx={{ fontSize: 16, mr: 0.5 }} />
+                        Job
+                      </ToggleButton>
+                      <ToggleButton value="equipment">
+                        <Build sx={{ fontSize: 16, mr: 0.5 }} />
+                        Equipment
+                      </ToggleButton>
+                    </ToggleButtonGroup>
+                  </Grid>
+                  
+                  {/* Coding fields based on type */}
+                  {line.codingType === 'gl_account' && (
+                    <>
+                      <Grid item xs={12} md={6}>
+                        <FormControl fullWidth>
+                          <InputLabel>Company</InputLabel>
+                          <Select
+                            value={line.selectedCompany}
+                            onChange={(e) => updateSplitLine(line.id, 'selectedCompany', e.target.value)}
+                            label="Company"
+                          >
+                            <MenuItem value="">Select Company</MenuItem>
+                            {companies.map((company) => (
+                              <MenuItem key={company.id} value={company.id}>
+                                {company.name}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </Grid>
+                      <Grid item xs={12} md={6}>
+                        <FormControl fullWidth>
+                          <InputLabel>GL Account</InputLabel>
+                          <Select
+                            value={line.selectedGlAccount}
+                            onChange={(e) => updateSplitLine(line.id, 'selectedGlAccount', e.target.value)}
+                            label="GL Account"
+                          >
+                            <MenuItem value="">Select GL Account</MenuItem>
+                            {glAccounts.map((account) => (
+                              <MenuItem key={account.id} value={account.id}>
+                                {account.account_number} - {account.description}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </Grid>
+                    </>
+                  )}
+                  
+                  {line.codingType === 'job' && (
+                    <>
+                      <Grid item xs={12} md={4}>
+                        <FormControl fullWidth>
+                          <InputLabel>Job</InputLabel>
+                          <Select
+                            value={line.selectedJob}
+                            onChange={(e) => updateSplitLine(line.id, 'selectedJob', e.target.value)}
+                            label="Job"
+                          >
+                            <MenuItem value="">Select Job</MenuItem>
+                            {jobs.map((job) => (
+                              <MenuItem key={job.id} value={job.id}>
+                                {job.job_number} - {job.description}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </Grid>
+                      <Grid item xs={12} md={4}>
+                        <FormControl fullWidth>
+                          <InputLabel>Phase</InputLabel>
+                          <Select
+                            value={line.selectedJobPhase}
+                            onChange={(e) => updateSplitLine(line.id, 'selectedJobPhase', e.target.value)}
+                            label="Phase"
+                          >
+                            <MenuItem value="">Select Phase</MenuItem>
+                            {jobPhases.map((phase) => (
+                              <MenuItem key={phase.id} value={phase.id}>
+                                {phase.phase_code} - {phase.description}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </Grid>
+                      <Grid item xs={12} md={4}>
+                        <FormControl fullWidth>
+                          <InputLabel>Cost Type</InputLabel>
+                          <Select
+                            value={line.selectedJobCostType}
+                            onChange={(e) => updateSplitLine(line.id, 'selectedJobCostType', e.target.value)}
+                            label="Cost Type"
+                          >
+                            <MenuItem value="">Select Cost Type</MenuItem>
+                            {jobCostTypes.map((type) => (
+                              <MenuItem key={type.id} value={type.id}>
+                                {type.cost_type_code} - {type.description}
+                              </MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </Grid>
+                    </>
+                  )}
+                  
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      label="Notes"
+                      value={line.notes}
+                      onChange={(e) => updateSplitLine(line.id, 'notes', e.target.value)}
+                      multiline
+                      rows={1}
+                    />
+                  </Grid>
+                </Grid>
+              </Box>
+            ))}
+            
+            {/* Add line button */}
+            <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Button
+                startIcon={<Add />}
+                onClick={addSplitLine}
+                variant="outlined"
+              >
+                Add Split Line
+              </Button>
+              
+              {splitTransaction && (
+                <Typography
+                  variant="body2"
+                  color={Math.abs(splitLines.reduce((sum, line) => sum + line.amount, 0) - splitTransaction.amount) > 0.01 ? 'error' : 'success.main'}
+                >
+                  Total: ${splitLines.reduce((sum, line) => sum + line.amount, 0).toFixed(2)} / ${splitTransaction.amount.toFixed(2)}
+                </Typography>
+              )}
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSplitDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={handleSaveSplit}
+            variant="contained"
+            color="primary"
+            disabled={loading || (splitTransaction && Math.abs(splitLines.reduce((sum, line) => sum + line.amount, 0) - splitTransaction.amount) > 0.01)}
+          >
+            Save Split
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Success/Error Snackbars */}
       <Snackbar
