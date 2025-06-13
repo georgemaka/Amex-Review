@@ -11,10 +11,14 @@ import Dashboard from './components/dashboard/Dashboard';
 import StatementList from './components/statements/StatementList';
 import StatementDetail from './components/statements/StatementDetail';
 import CodingInterface from './components/coding/CodingInterface';
+import CodeTransactions from './components/coding/CodeTransactions';
+import CodeTransactionsDebug from './components/coding/CodeTransactionsDebug';
+// import CodeTransactionsSimple from './components/coding/CodeTransactionsSimple';
 import UserManagement from './components/admin/UserManagement';
 import CardholderManagement from './components/admin/CardholderManagement';
 import NotificationSnackbar from './components/common/NotificationSnackbar';
 import AnalyticsDashboard from './components/analytics/AnalyticsDashboard';
+import ErrorBoundary from './components/common/ErrorBoundary';
 import api from './services/api';
 
 function App() {
@@ -52,6 +56,7 @@ function App() {
             <Route path="/statements" element={<StatementList />} />
             <Route path="/statements/:id" element={<StatementDetail />} />
             <Route path="/coding/:statementId" element={<CodingInterface />} />
+            <Route path="/coding" element={<ErrorBoundary><CodeTransactions /></ErrorBoundary>} />
             <Route path="/analytics" element={<AnalyticsDashboard />} />
             <Route path="/admin/users" element={<UserManagement />} />
             <Route path="/admin/cardholders" element={<CardholderManagement />} />

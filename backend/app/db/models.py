@@ -32,6 +32,12 @@ class TransactionStatus(str, enum.Enum):
     EXPORTED = "exported"
 
 
+class CodingType(str, enum.Enum):
+    GL_ACCOUNT = "gl_account"
+    JOB = "job"
+    EQUIPMENT = "equipment"
+
+
 class User(Base):
     __tablename__ = "users"
     
@@ -165,11 +171,18 @@ class Transaction(Base):
     merchant_name = Column(String(255), nullable=True)
     category_id = Column(Integer, ForeignKey("spending_categories.id"), nullable=True)
     
-    # Coding fields
-    gl_account = Column(String(20), nullable=True)
-    job_code = Column(String(50), nullable=True)
-    phase = Column(String(20), nullable=True)
-    cost_type = Column(String(20), nullable=True)
+    # New coding fields
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True)
+    gl_account_id = Column(Integer, ForeignKey("gl_accounts.id"), nullable=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=True)
+    job_phase_id = Column(Integer, ForeignKey("job_phases.id"), nullable=True)
+    job_cost_type_id = Column(Integer, ForeignKey("job_cost_types.id"), nullable=True)
+    equipment_id = Column(Integer, ForeignKey("equipment.id"), nullable=True)
+    equipment_cost_code_id = Column(Integer, ForeignKey("equipment_cost_codes.id"), nullable=True)
+    equipment_cost_type_id = Column(Integer, ForeignKey("equipment_cost_types.id"), nullable=True)
+    coding_type = Column(Enum(CodingType), nullable=True)
+    
+    # Notes field
     notes = Column(Text, nullable=True)
     
     # Status tracking
@@ -191,6 +204,16 @@ class Transaction(Base):
     coded_by = relationship("User", foreign_keys=[coded_by_id], back_populates="coded_transactions")
     reviewed_by = relationship("User", foreign_keys=[reviewed_by_id], back_populates="reviewed_transactions")
     category = relationship("SpendingCategory", back_populates="transactions")
+    
+    # New relationships
+    company = relationship("Company")
+    gl_account_rel = relationship("GLAccount")
+    job = relationship("Job")
+    job_phase = relationship("JobPhase")
+    job_cost_type = relationship("JobCostType")
+    equipment = relationship("Equipment")
+    equipment_cost_code = relationship("EquipmentCostCode")
+    equipment_cost_type = relationship("EquipmentCostType")
 
 
 class CodingSuggestion(Base):
@@ -324,3 +347,105 @@ class SpendingAlert(Base):
     category = relationship("SpendingCategory", back_populates="spending_alerts")
     transaction = relationship("Transaction")
     resolved_by = relationship("User")
+
+
+class Company(Base):
+    __tablename__ = "companies"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(10), unique=True, nullable=False)
+    name = Column(String(255), nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    gl_accounts = relationship("GLAccount", back_populates="company")
+    transactions = relationship("Transaction", back_populates="company")
+
+
+class GLAccount(Base):
+    __tablename__ = "gl_accounts"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    company_id = Column(Integer, ForeignKey("companies.id"), nullable=True)
+    account_code = Column(String(50), nullable=False)
+    description = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    company = relationship("Company", back_populates="gl_accounts")
+    transactions = relationship("Transaction", back_populates="gl_account_rel")
+
+
+class Job(Base):
+    __tablename__ = "jobs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    job_number = Column(String(50), unique=True, nullable=False)
+    name = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    phases = relationship("JobPhase", back_populates="job")
+    transactions = relationship("Transaction", back_populates="job")
+
+
+class JobPhase(Base):
+    __tablename__ = "job_phases"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=True)
+    phase_code = Column(String(50), nullable=False)
+    description = Column(String(255), nullable=True)
+    
+    # Relationships
+    job = relationship("Job", back_populates="phases")
+    transactions = relationship("Transaction", back_populates="job_phase")
+
+
+class JobCostType(Base):
+    __tablename__ = "job_cost_types"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(50), unique=True, nullable=False)
+    description = Column(String(255), nullable=True)
+    
+    # Relationships
+    transactions = relationship("Transaction", back_populates="job_cost_type")
+
+
+class Equipment(Base):
+    __tablename__ = "equipment"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    equipment_number = Column(String(50), unique=True, nullable=False)
+    description = Column(String(255), nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    transactions = relationship("Transaction", back_populates="equipment")
+
+
+class EquipmentCostCode(Base):
+    __tablename__ = "equipment_cost_codes"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(50), unique=True, nullable=False)
+    description = Column(String(255), nullable=True)
+    
+    # Relationships
+    transactions = relationship("Transaction", back_populates="equipment_cost_code")
+
+
+class EquipmentCostType(Base):
+    __tablename__ = "equipment_cost_types"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(50), unique=True, nullable=False)
+    description = Column(String(255), nullable=True)
+    
+    # Relationships
+    transactions = relationship("Transaction", back_populates="equipment_cost_type")

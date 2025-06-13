@@ -149,7 +149,7 @@ class ApiService {
     return response.data;
   }
 
-  async codeTransaction(id: number, codingData: any) {
+  async codeTransactionOld(id: number, codingData: any) {
     const response = await this.api.put(`/transactions/${id}/code`, codingData);
     return response.data;
   }
@@ -331,6 +331,82 @@ class ApiService {
     const response = await this.api.post('/cardholders/import', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
+    return response.data;
+  }
+
+  // Coding endpoints
+  async getCodingTransactions(params?: {
+    cardholder_id?: number;
+    date_from?: string;
+    date_to?: string;
+    status?: string;
+    skip?: number;
+    limit?: number;
+  }) {
+    const response = await this.api.get('/coding/transactions', { params });
+    return response.data;
+  }
+
+  async codeTransaction(transactionId: number, data: any) {
+    const response = await this.api.put(`/coding/transactions/${transactionId}`, data);
+    return response.data;
+  }
+
+  async batchCodeTransactions(data: {
+    transaction_ids: number[];
+    company_id?: number;
+    coding_type: string;
+    gl_account_id?: number;
+    job_id?: number;
+    job_phase_id?: number;
+    job_cost_type_id?: number;
+    equipment_id?: number;
+    equipment_cost_code_id?: number;
+    equipment_cost_type_id?: number;
+    notes?: string;
+  }) {
+    const response = await this.api.post('/coding/transactions/batch', data);
+    return response.data;
+  }
+
+  // Reference data endpoints
+  async getCompanies(is_active = true) {
+    const response = await this.api.get('/coding/companies', { params: { is_active } });
+    return response.data;
+  }
+
+  async getGLAccounts(params?: { company_id?: number; is_active?: boolean }) {
+    const response = await this.api.get('/coding/gl-accounts', { params });
+    return response.data;
+  }
+
+  async getJobs(params?: { is_active?: boolean; search?: string }) {
+    const response = await this.api.get('/coding/jobs', { params });
+    return response.data;
+  }
+
+  async getJobPhases(jobId: number) {
+    const response = await this.api.get(`/coding/jobs/${jobId}/phases`);
+    return response.data;
+  }
+
+  async getJobCostTypes() {
+    const response = await this.api.get('/coding/job-cost-types');
+    return response.data;
+  }
+
+  async getEquipment(params?: { is_active?: boolean; search?: string }) {
+    const response = await this.api.get('/coding/equipment', { params });
+    return response.data;
+  }
+
+  async getEquipmentCostCodes() {
+    const response = await this.api.get('/coding/equipment-cost-codes');
+    return response.data;
+  }
+
+  async getEquipmentCostTypes() {
+    const response = await this.api.get('/coding/equipment-cost-types');
     return response.data;
   }
 

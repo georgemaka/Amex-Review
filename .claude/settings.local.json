@@ -23,7 +23,9 @@
       "Bash(npm start)",
       "Bash(rm:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(npm run build:*)",
+      "Bash(pkill:*)"
     ],
     "deny": []
   }

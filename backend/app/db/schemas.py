@@ -2,7 +2,7 @@ from typing import Optional, List
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, validator
 
-from app.db.models import UserRole, StatementStatus, TransactionStatus
+from app.db.models import UserRole, StatementStatus, TransactionStatus, CodingType
 
 
 # User Schemas
@@ -179,10 +179,10 @@ class TransactionUpdate(TransactionCode):
 class Transaction(TransactionBase):
     id: int
     cardholder_statement_id: int
-    gl_account: Optional[str]
-    job_code: Optional[str]
-    phase: Optional[str]
-    cost_type: Optional[str]
+    gl_account: Optional[str] = None
+    job_code: Optional[str] = None
+    phase: Optional[str] = None
+    cost_type: Optional[str] = None
     notes: Optional[str]
     status: TransactionStatus
     coded_at: Optional[datetime]
@@ -195,6 +195,207 @@ class Transaction(TransactionBase):
     
     class Config:
         from_attributes = True
+
+
+# Company Schemas
+class CompanyBase(BaseModel):
+    code: str
+    name: str
+    is_active: bool = True
+
+
+class CompanyCreate(CompanyBase):
+    pass
+
+
+class Company(CompanyBase):
+    id: int
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+# GL Account Schemas
+class GLAccountBase(BaseModel):
+    company_id: Optional[int] = None
+    account_code: str
+    description: Optional[str] = None
+    is_active: bool = True
+
+
+class GLAccountCreate(GLAccountBase):
+    pass
+
+
+class GLAccount(GLAccountBase):
+    id: int
+    created_at: datetime
+    company: Optional[Company] = None
+    
+    class Config:
+        from_attributes = True
+
+
+# Job Schemas
+class JobBase(BaseModel):
+    job_number: str
+    name: Optional[str] = None
+    is_active: bool = True
+
+
+class JobCreate(JobBase):
+    pass
+
+
+class Job(JobBase):
+    id: int
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+# Job Phase Schemas
+class JobPhaseBase(BaseModel):
+    job_id: Optional[int] = None
+    phase_code: str
+    description: Optional[str] = None
+
+
+class JobPhaseCreate(JobPhaseBase):
+    pass
+
+
+class JobPhase(JobPhaseBase):
+    id: int
+    job: Optional[Job] = None
+    
+    class Config:
+        from_attributes = True
+
+
+# Job Cost Type Schemas
+class JobCostTypeBase(BaseModel):
+    code: str
+    description: Optional[str] = None
+
+
+class JobCostTypeCreate(JobCostTypeBase):
+    pass
+
+
+class JobCostType(JobCostTypeBase):
+    id: int
+    
+    class Config:
+        from_attributes = True
+
+
+# Equipment Schemas
+class EquipmentBase(BaseModel):
+    equipment_number: str
+    description: Optional[str] = None
+    is_active: bool = True
+
+
+class EquipmentCreate(EquipmentBase):
+    pass
+
+
+class Equipment(EquipmentBase):
+    id: int
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+
+# Equipment Cost Code Schemas
+class EquipmentCostCodeBase(BaseModel):
+    code: str
+    description: Optional[str] = None
+
+
+class EquipmentCostCodeCreate(EquipmentCostCodeBase):
+    pass
+
+
+class EquipmentCostCode(EquipmentCostCodeBase):
+    id: int
+    
+    class Config:
+        from_attributes = True
+
+
+# Equipment Cost Type Schemas
+class EquipmentCostTypeBase(BaseModel):
+    code: str
+    description: Optional[str] = None
+
+
+class EquipmentCostTypeCreate(EquipmentCostTypeBase):
+    pass
+
+
+class EquipmentCostType(EquipmentCostTypeBase):
+    id: int
+    
+    class Config:
+        from_attributes = True
+
+
+# Transaction Coding Schemas
+class TransactionCodingUpdate(BaseModel):
+    company_id: Optional[int] = None
+    coding_type: Optional[CodingType] = None
+    gl_account_id: Optional[int] = None
+    job_id: Optional[int] = None
+    job_phase_id: Optional[int] = None
+    job_cost_type_id: Optional[int] = None
+    equipment_id: Optional[int] = None
+    equipment_cost_code_id: Optional[int] = None
+    equipment_cost_type_id: Optional[int] = None
+    notes: Optional[str] = None
+
+
+# First need to define CardholderStatement schema for the relationship
+class CardholderStatementBase(BaseModel):
+    cardholder: Optional[Cardholder] = None
+    
+    class Config:
+        from_attributes = True
+
+
+class TransactionWithCoding(Transaction):
+    company: Optional[Company] = None
+    gl_account_rel: Optional[GLAccount] = None
+    job: Optional[Job] = None
+    job_phase: Optional[JobPhase] = None
+    job_cost_type: Optional[JobCostType] = None
+    equipment: Optional[Equipment] = None
+    equipment_cost_code: Optional[EquipmentCostCode] = None
+    equipment_cost_type: Optional[EquipmentCostType] = None
+    coding_type: Optional[CodingType] = None
+    cardholder_statement: Optional[CardholderStatementBase] = None
+    
+    class Config:
+        from_attributes = True
+
+
+# Batch Coding Request
+class BatchCodingRequest(BaseModel):
+    transaction_ids: List[int]
+    company_id: Optional[int] = None
+    coding_type: CodingType
+    gl_account_id: Optional[int] = None
+    job_id: Optional[int] = None
+    job_phase_id: Optional[int] = None
+    job_cost_type_id: Optional[int] = None
+    equipment_id: Optional[int] = None
+    equipment_cost_code_id: Optional[int] = None
+    equipment_cost_type_id: Optional[int] = None
+    notes: Optional[str] = None
 
 
 # Progress Schemas
