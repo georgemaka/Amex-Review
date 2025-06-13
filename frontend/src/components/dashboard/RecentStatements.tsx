@@ -12,8 +12,9 @@ import {
   Tooltip,
   Box,
   Typography,
+  Button,
 } from '@mui/material';
-import { Visibility, Email } from '@mui/icons-material';
+import { Visibility, Email, People } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { Statement } from '../../store/slices/statementSlice';
 
@@ -61,6 +62,7 @@ const RecentStatements: React.FC<RecentStatementsProps> = ({ statements }) => {
             <TableCell>Period</TableCell>
             <TableCell>Closing Date</TableCell>
             <TableCell>Status</TableCell>
+            <TableCell>Cardholders</TableCell>
             <TableCell>Created</TableCell>
             <TableCell align="right">Actions</TableCell>
           </TableRow>
@@ -82,17 +84,31 @@ const RecentStatements: React.FC<RecentStatementsProps> = ({ statements }) => {
                 />
               </TableCell>
               <TableCell>
+                <Chip 
+                  label={statement.cardholder_count || 0}
+                  size="small"
+                  color={statement.cardholder_count ? "primary" : "default"}
+                  icon={<People />}
+                />
+              </TableCell>
+              <TableCell>
                 {format(new Date(statement.created_at), 'MMM dd, yyyy')}
               </TableCell>
               <TableCell align="right">
-                <Tooltip title="View Details">
-                  <IconButton
-                    size="small"
-                    onClick={() => navigate(`/statements/${statement.id}`)}
-                  >
-                    <Visibility />
-                  </IconButton>
-                </Tooltip>
+                <Button
+                  variant="contained"
+                  size="small"
+                  color="info"
+                  startIcon={<People />}
+                  onClick={() => navigate(`/statements/${statement.id}`)}
+                  sx={{ 
+                    mr: 1,
+                    textTransform: 'none',
+                    fontWeight: 500,
+                  }}
+                >
+                  View Cardholders
+                </Button>
                 {statement.status === 'split' && (
                   <Tooltip title="Send Emails">
                     <IconButton

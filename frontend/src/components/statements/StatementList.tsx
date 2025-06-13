@@ -279,6 +279,7 @@ const StatementList: React.FC = () => {
                 <TableCell>PDF File</TableCell>
                 <TableCell>Excel File</TableCell>
                 <TableCell>Status</TableCell>
+                <TableCell>Cardholders</TableCell>
                 <TableCell>Created</TableCell>
                 <TableCell align="right" sx={{ minWidth: 300 }}>Actions</TableCell>
               </TableRow>
@@ -314,6 +315,14 @@ const StatementList: React.FC = () => {
                         </Typography>
                       )}
                     </Box>
+                  </TableCell>
+                  <TableCell>
+                    <Chip 
+                      label={statement.cardholder_count || 0}
+                      size="small"
+                      color={statement.cardholder_count ? "primary" : "default"}
+                      icon={<People />}
+                    />
                   </TableCell>
                   <TableCell>
                     {format(new Date(statement.created_at), 'MMM dd, yyyy')}
@@ -383,7 +392,7 @@ const StatementList: React.FC = () => {
               ))}
               {statements.length === 0 && !isLoading && (
                 <TableRow>
-                  <TableCell colSpan={7} align="center">
+                  <TableCell colSpan={8} align="center">
                     <Typography color="text.secondary" sx={{ py: 4 }}>
                       No statements found
                     </Typography>

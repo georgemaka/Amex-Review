@@ -148,6 +148,13 @@ class Statement(StatementBase):
         from_attributes = True
 
 
+class StatementWithCardholderCount(Statement):
+    cardholder_count: int = 0
+    
+    class Config:
+        from_attributes = True
+
+
 # Transaction Schemas
 class TransactionBase(BaseModel):
     transaction_date: datetime

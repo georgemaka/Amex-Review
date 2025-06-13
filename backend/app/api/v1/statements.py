@@ -18,7 +18,8 @@ from app.db.models import (
 from app.db.schemas import (
     Statement as StatementSchema,
     StatementUpload,
-    StatementProgress
+    StatementProgress,
+    StatementWithCardholderCount
 )
 from app.db.session import get_async_db
 from app.tasks.statement_tasks import process_statement_task
@@ -101,21 +102,39 @@ async def upload_statement(
     return statement
 
 
-@router.get("/", response_model=List[StatementSchema])
+@router.get("/", response_model=List[StatementWithCardholderCount])
 async def list_statements(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
     skip: int = 0,
     limit: int = 20
 ) -> Any:
-    result = await db.execute(
-        select(Statement)
+    from sqlalchemy import func
+    
+    # Query statements with cardholder count
+    stmt = (
+        select(
+            Statement,
+            func.count(CardholderStatement.id).label('cardholder_count')
+        )
+        .outerjoin(CardholderStatement, Statement.id == CardholderStatement.statement_id)
+        .group_by(Statement.id)
         .order_by(Statement.year.desc(), Statement.month.desc())
         .offset(skip)
         .limit(limit)
     )
-    statements = result.scalars().all()
-    return statements
+    
+    result = await db.execute(stmt)
+    rows = result.all()
+    
+    # Convert to response model
+    statements_with_count = []
+    for statement, count in rows:
+        statement_dict = statement.__dict__.copy()
+        statement_dict['cardholder_count'] = count or 0
+        statements_with_count.append(StatementWithCardholderCount(**statement_dict))
+    
+    return statements_with_count
 
 
 @router.get("/{statement_id}", response_model=StatementSchema)

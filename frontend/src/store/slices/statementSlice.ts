@@ -13,6 +13,7 @@ export interface Statement {
   processing_completed_at?: string;
   processing_error?: string;
   created_at: string;
+  cardholder_count?: number;
 }
 
 export interface StatementProgress {
