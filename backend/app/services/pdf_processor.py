@@ -23,6 +23,12 @@ class PDFProcessor:
             r"^\s*Page \d+ of \d+\s*$",  # Only page number
             r"This page intentionally left blank",
         ]
+        # Common header elements to identify
+        self.header_elements = [
+            'PREPARED FOR', 'ACCOUNT NUMBER', 'CLOSING DATE', 
+            'ACTIVITY CONTINUED', 'PAGE', 'AMERICAN EXPRESS',
+            'SUKUT CONSTRUCTION', 'EJIM BEHRENS/CBA'
+        ]
     
     def split_by_cardholder(self, pdf_path: str, output_dir: str) -> Dict[str, Dict]:
         """
@@ -71,7 +77,7 @@ class PDFProcessor:
                     # Skip blank/header-only pages except for the last page (which should have the total)
                     actual_page_num = page_num + 1  # Convert to 1-based
                     if actual_page_num in blank_pages_set and actual_page_num != page_range[1]:
-                        logger.debug(f"Skipping blank page {actual_page_num} from {cardholder_name}'s PDF")
+                        logger.info(f"Skipping blank page {actual_page_num} from {cardholder_name}'s PDF")
                         continue
                     writer.add_page(reader.pages[page_num])
                     pages_added += 1
@@ -230,20 +236,27 @@ class PDFProcessor:
                 return False  # Not blank if it has transaction data
         
         # Check for known blank page patterns
-        if "Activity Continued" in text and len(text.strip()) < 200:
-            # Only mark as blank if it's JUST "Activity Continued" with headers
+        if "Activity Continued" in text:
+            # Mark as blank if it's an "Activity Continued" page with no transactions
             # Count non-header content
             lines = text.strip().split('\n')
             content_lines = 0
+            has_transaction_content = False
+            
             for line in lines:
                 line_stripped = line.strip()
                 # Skip obvious header/footer lines
-                if any(x in line_stripped for x in ['Page', 'Account Number', 'Prepared For', 'Activity Continued']):
+                if any(x in line_stripped.upper() for x in self.header_elements):
                     continue
+                # Check if line has meaningful transaction content
                 if len(line_stripped) > 10:  # Meaningful content
                     content_lines += 1
+                    # Look for transaction-like content (dates, amounts, merchant names)
+                    if any(char.isdigit() for char in line_stripped):
+                        has_transaction_content = True
             
-            if content_lines < 2:  # Very little actual content
+            # If very little content and no transaction data, it's blank
+            if content_lines < 3 and not has_transaction_content:
                 return True
         
         # For any other page, default to NOT blank
