@@ -207,59 +207,47 @@ class PDFProcessor:
     def _is_blank_or_header_only_page(self, text: str) -> bool:
         """
         Check if a page is blank or contains only header/footer information.
+        Be conservative - only mark truly blank pages.
         """
         # First check if text is too short
         if len(text.strip()) < 50:
             return True
         
-        # Check for known blank page patterns
-        for pattern in self.blank_page_patterns:
-            if re.search(pattern, text, re.IGNORECASE | re.MULTILINE):
-                return True
-        
-        # Remove common header/footer elements
-        cleaned_text = text
-        # Remove page numbers
-        cleaned_text = re.sub(r'Page \d+ of \d+', '', cleaned_text, flags=re.IGNORECASE)
-        # Remove dates in various formats
-        cleaned_text = re.sub(r'\d{1,2}/\d{1,2}/\d{2,4}', '', cleaned_text)
-        # Remove account numbers (various X patterns)
-        cleaned_text = re.sub(r'X{3,}[-\s]?X{3,}[-\s]?\d+', '', cleaned_text, flags=re.IGNORECASE)
-        # Remove common header text
-        cleaned_text = re.sub(r'Prepared For.*?(?:\n|$)', '', cleaned_text, flags=re.IGNORECASE)
-        cleaned_text = re.sub(r'Account Number.*?(?:\n|$)', '', cleaned_text, flags=re.IGNORECASE)
-        cleaned_text = re.sub(r'Closing Date.*?(?:\n|$)', '', cleaned_text, flags=re.IGNORECASE)
-        # Remove company names that might be in header
-        cleaned_text = re.sub(r'SUKUT CONSTRUCTION', '', cleaned_text, flags=re.IGNORECASE)
-        cleaned_text = re.sub(r'AMERICAN EXPRESS', '', cleaned_text, flags=re.IGNORECASE)
-        
-        # After removing headers/footers, check if there's meaningful content left
-        remaining_text = cleaned_text.strip()
-        
-        # If less than 100 characters remain, it's likely just a header/footer page
-        if len(remaining_text) < 100:
-            return True
-        
-        # Check if remaining text is mostly whitespace or special characters
-        alpha_numeric_count = sum(c.isalnum() for c in remaining_text)
-        if alpha_numeric_count < 20:  # Very few actual letters/numbers
-            return True
-        
-        # Additional check: Look for transaction indicators
+        # Check for transaction indicators FIRST - if found, it's NOT blank
         transaction_indicators = [
             r'\$[\d,]+\.\d{2}',  # Dollar amounts
-            r'Transaction',
-            r'Payment',
-            r'Purchase',
-            r'Credit',
-            r'Debit',
-            r'Total for',  # Don't mark Total pages as blank!
+            r'Total for',  # Total pages are never blank
+            r'Transaction\s+Date',  # Transaction headers
+            r'Reference\s+Number',
+            # Look for date patterns that appear in transactions
+            r'\d{2}/\d{2}/\d{2,4}\s+\d{2}/\d{2}/\d{2,4}',  # Transaction date + posting date pattern
+            # Merchant names often have these patterns
+            r'(PAYMENT|PURCHASE|CREDIT|DEBIT)',
         ]
         
         for indicator in transaction_indicators:
             if re.search(indicator, text, re.IGNORECASE):
                 return False  # Not blank if it has transaction data
         
+        # Check for known blank page patterns
+        if "Activity Continued" in text and len(text.strip()) < 200:
+            # Only mark as blank if it's JUST "Activity Continued" with headers
+            # Count non-header content
+            lines = text.strip().split('\n')
+            content_lines = 0
+            for line in lines:
+                line_stripped = line.strip()
+                # Skip obvious header/footer lines
+                if any(x in line_stripped for x in ['Page', 'Account Number', 'Prepared For', 'Activity Continued']):
+                    continue
+                if len(line_stripped) > 10:  # Meaningful content
+                    content_lines += 1
+            
+            if content_lines < 2:  # Very little actual content
+                return True
+        
+        # For any other page, default to NOT blank
+        # This ensures we don't accidentally exclude transaction pages
         return False
     
     def _generate_filename(self, cardholder_name: str, closing_date: Optional[datetime]) -> str:
