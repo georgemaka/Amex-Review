@@ -446,8 +446,8 @@ def process_statement_analytics_sync(db, statement_id: int):
         
         # Delete existing analytics for this period
         db.query(SpendingAnalytics).filter(
-            SpendingAnalytics.month == month,
-            SpendingAnalytics.year == year
+            SpendingAnalytics.period_month == month,
+            SpendingAnalytics.period_year == year
         ).delete()
         
         # Calculate spending by category
@@ -474,8 +474,8 @@ def process_statement_analytics_sync(db, statement_id: int):
         for category_id, amount, count in category_spending:
             if category_id:  # Skip uncategorized
                 analytics = SpendingAnalytics(
-                    month=month,
-                    year=year,
+                    period_month=month,
+                    period_year=year,
                     category_id=category_id,
                     total_amount=float(amount),
                     transaction_count=count,
@@ -486,8 +486,8 @@ def process_statement_analytics_sync(db, statement_id: int):
         # Create cardholder analytics
         for cardholder_id, amount, count in cardholder_spending:
             analytics = SpendingAnalytics(
-                month=month,
-                year=year,
+                period_month=month,
+                period_year=year,
                 cardholder_id=cardholder_id,
                 total_amount=float(amount),
                 transaction_count=count,

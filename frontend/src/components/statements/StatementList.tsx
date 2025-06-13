@@ -51,9 +51,21 @@ const StatementList: React.FC = () => {
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
   const [processingStatements, setProcessingStatements] = useState<Set<number>>(new Set());
+  const [pollErrorCount, setPollErrorCount] = useState(0);
+  const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+
+  const refreshStatements = async () => {
+    try {
+      await dispatch(fetchStatements({ skip: page * rowsPerPage, limit: rowsPerPage })).unwrap();
+      setPollErrorCount(0);
+    } catch (error) {
+      console.error('Failed to fetch statements:', error);
+      setPollErrorCount(prev => prev + 1);
+    }
+  };
 
   useEffect(() => {
-    dispatch(fetchStatements({ skip: page * rowsPerPage, limit: rowsPerPage }));
+    refreshStatements();
   }, [dispatch, page, rowsPerPage]);
 
   // Set up polling for processing statements
@@ -69,6 +81,11 @@ const StatementList: React.FC = () => {
     // Check if any statements just finished processing
     processingStatements.forEach(id => {
       const stmt = statements.find(s => s.id === id);
+      if (!stmt) {
+        // Statement no longer exists (was deleted)
+        console.warn(`Statement ${id} no longer exists, stopping tracking`);
+        return;
+      }
       if (stmt && stmt.status !== 'processing' && stmt.status !== 'pending') {
         // Statement finished processing
         if (stmt.status === 'split') {
@@ -91,14 +108,28 @@ const StatementList: React.FC = () => {
     // Set up polling
     if (currentProcessing.size > 0 && !pollingInterval) {
       // Start polling every 3 seconds
-      const interval = setInterval(() => {
-        dispatch(fetchStatements({ skip: page * rowsPerPage, limit: rowsPerPage }));
+      const interval = setInterval(async () => {
+        try {
+          await refreshStatements();
+        } catch (error) {
+          console.error('Polling error:', error);
+          // Stop polling after 5 consecutive errors
+          if (pollErrorCount >= 5) {
+            clearInterval(interval);
+            setPollingInterval(null);
+            dispatch(addNotification({
+              message: 'Statement polling stopped due to errors. Please refresh the page.',
+              type: 'error',
+            }));
+          }
+        }
       }, 3000);
       setPollingInterval(interval);
     } else if (currentProcessing.size === 0 && pollingInterval) {
       // Stop polling when no statements are processing
       clearInterval(pollingInterval);
       setPollingInterval(null);
+      setPollErrorCount(0);
     }
 
     // Cleanup on unmount
@@ -107,7 +138,7 @@ const StatementList: React.FC = () => {
         clearInterval(pollingInterval);
       }
     };
-  }, [statements, pollingInterval, processingStatements, dispatch, page, rowsPerPage]);
+  }, [statements, pollingInterval, dispatch, page, rowsPerPage, pollErrorCount]);
 
   const handleChangePage = (event: unknown, newPage: number) => {
     setPage(newPage);
@@ -200,15 +231,33 @@ const StatementList: React.FC = () => {
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
         <Typography variant="h4">Statements</Typography>
-        {user?.role === 'admin' && (
+        <Box sx={{ display: 'flex', gap: 2 }}>
           <Button
-            variant="contained"
-            startIcon={<Add />}
-            onClick={() => setUploadModalOpen(true)}
+            variant="outlined"
+            startIcon={<Refresh />}
+            onClick={async () => {
+              setIsManualRefreshing(true);
+              await refreshStatements();
+              setIsManualRefreshing(false);
+              dispatch(addNotification({
+                message: 'Statements refreshed',
+                type: 'info',
+              }));
+            }}
+            disabled={isManualRefreshing}
           >
-            Upload Statement
+            {isManualRefreshing ? 'Refreshing...' : 'Refresh'}
           </Button>
-        )}
+          {user?.role === 'admin' && (
+            <Button
+              variant="contained"
+              startIcon={<Add />}
+              onClick={() => setUploadModalOpen(true)}
+            >
+              Upload Statement
+            </Button>
+          )}
+        </Box>
       </Box>
 
       <Paper>
