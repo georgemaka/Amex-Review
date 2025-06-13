@@ -524,7 +524,15 @@ const CodeTransactions: React.FC = () => {
       )}
 
       {/* Filters */}
-      <Paper sx={{ p: 2, mb: 2 }}>
+      <Paper sx={{ 
+        p: 2, 
+        mb: 2,
+        position: 'sticky',
+        top: 0,
+        zIndex: 10,
+        backgroundColor: 'background.paper',
+        boxShadow: 2
+      }}>
         <Grid container spacing={2}>
           {/* First Row */}
           <Grid item xs={12} md={3}>
