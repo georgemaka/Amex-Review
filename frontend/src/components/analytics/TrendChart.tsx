@@ -65,7 +65,7 @@ const TrendChart: React.FC<TrendChartProps> = ({ data }) => {
           style={{ fontSize: '12px' }}
         />
         <YAxis 
-          tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
+          tickFormatter={(value: number) => `$${(value / 1000).toFixed(0)}k`}
           style={{ fontSize: '12px' }}
         />
         <Tooltip content={<CustomTooltip />} />

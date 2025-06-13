@@ -19,15 +19,14 @@ const Layout: React.FC = () => {
         component="main"
         sx={{
           flexGrow: 1,
-          p: 4,
+          px: 3,
+          py: 3,
           width: { sm: `calc(100% - 200px)` },
           ml: { sm: '200px' },
           mt: '64px',
           height: 'calc(100vh - 64px)',
           overflow: 'auto',
           backgroundColor: 'background.default',
-          maxWidth: '1600px',
-          mx: 'auto',
         }}
       >
         <Outlet />

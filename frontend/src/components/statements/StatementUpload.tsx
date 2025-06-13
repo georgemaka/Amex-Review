@@ -12,10 +12,7 @@ import {
   Grid,
   Alert,
   CircularProgress,
-  FormControl,
-  InputLabel,
   MenuItem,
-  Select,
 } from '@mui/material';
 import { CloudUpload, Cancel, Description, InsertDriveFile } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
@@ -232,21 +229,22 @@ const StatementUpload: React.FC = () => {
               <Form>
                 <Grid container spacing={3}>
                   <Grid item xs={12} md={6}>
-                    <FormControl fullWidth>
-                      <InputLabel>Month</InputLabel>
-                      <Select
-                        name="month"
-                        value={values.month}
-                        onChange={(e) => setFieldValue('month', e.target.value)}
-                        error={touched.month && Boolean(errors.month)}
-                      >
-                        {[...Array(12)].map((_, i) => (
-                          <MenuItem key={i + 1} value={i + 1}>
-                            {new Date(2000, i).toLocaleString('default', { month: 'long' })}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
+                    <TextField
+                      fullWidth
+                      select
+                      name="month"
+                      label="Month"
+                      value={values.month}
+                      onChange={(e) => setFieldValue('month', e.target.value)}
+                      error={touched.month && Boolean(errors.month)}
+                      helperText={touched.month && errors.month}
+                    >
+                      {[...Array(12)].map((_, i) => (
+                        <MenuItem key={i + 1} value={i + 1}>
+                          {new Date(2000, i).toLocaleString('default', { month: 'long' })}
+                        </MenuItem>
+                      ))}
+                    </TextField>
                   </Grid>
 
                   <Grid item xs={12} md={6}>

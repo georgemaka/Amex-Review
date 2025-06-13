@@ -18,7 +18,9 @@
       "Bash(sed:*)",
       "Bash(cp:*)",
       "Bash(python test_pdf_split.py:*)",
-      "Bash(docker cp:*)"
+      "Bash(docker cp:*)",
+      "Bash(rm:*)",
+      "Bash(npm start)"
     ],
     "deny": []
   }

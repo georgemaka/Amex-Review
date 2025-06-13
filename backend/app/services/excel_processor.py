@@ -14,30 +14,70 @@ logger = logging.getLogger(__name__)
 class ExcelProcessor:
     def __init__(self):
         self.vendor_code = settings.AMEX_VENDOR_CODE
-        self.starting_row = 15  # Data starts at row 15
         self.jcco = "1"  # Job Cost Company
         self.record_type = "3"  # Type for APLB records
+        self.header_row = None
+        self.column_map = {}
+    
+    def _find_header_row(self, sheet) -> int:
+        """Find the header row by looking for 'Product' in the first column."""
+        for row_num in range(1, 30):  # Check first 30 rows
+            cell_value = sheet.cell(row=row_num, column=1).value
+            if cell_value and "Product" in str(cell_value):
+                return row_num
+        raise ValueError("Could not find header row with 'Product' column")
+    
+    def _map_columns(self, sheet, header_row: int) -> None:
+        """Map column names to column numbers based on header row."""
+        self.column_map = {}
         
-        # Column mappings for AMEX Excel format
-        self.COLS = {
-            'basic_last_name': 2,
-            'basic_first_name': 3,
-            'basic_card_number': 7,
-            'supp_last_name': 11,
-            'supp_first_name': 12,
-            'supp_card_number': 13,
-            'control_account_name': 14,
-            'control_account_number': 15,
-            'business_process_date': 16,
-            'transaction_date': 17,
-            'transaction_reference': 18,
-            'amount': 19,
-            'description_1': 20,  # Primary description/merchant
-            'description_2': 21,
-            'description_3': 22,
-            'description_4': 23,
-            'description_5': 24
-        }
+        # Read all headers from the header row
+        for col_num in range(1, sheet.max_column + 1):
+            header = sheet.cell(row=header_row, column=col_num).value
+            if header:
+                # Clean header: remove newlines and extra spaces
+                header_str = ' '.join(str(header).split()).strip()
+                
+                # Map the important columns
+                if "Basic Card Account No" in header_str:
+                    self.column_map['basic_card_account'] = col_num
+                elif "Supplemental Cardmember Last Name" in header_str:
+                    self.column_map['supp_last_name'] = col_num
+                elif "Supplemental Cardmember First Name" in header_str:
+                    self.column_map['supp_first_name'] = col_num
+                elif "Supplemental Account Number" in header_str:
+                    self.column_map['supp_card_number'] = col_num
+                elif "Business Process Date" in header_str:
+                    self.column_map['business_process_date'] = col_num
+                elif "Transaction Date" in header_str and "Reference" not in header_str:
+                    self.column_map['transaction_date'] = col_num
+                elif "Transaction Amount USD" in header_str:
+                    self.column_map['amount'] = col_num
+                elif "Transaction Reference" in header_str:
+                    self.column_map['transaction_reference'] = col_num
+                    
+                # Map description columns (up to 16)
+                for i in range(1, 17):
+                    if f"Transaction Description {i}" in header_str:
+                        self.column_map[f'description_{i}'] = col_num
+                        
+        logger.info(f"Mapped columns: {self.column_map}")
+        
+        # Log all found headers for debugging
+        all_headers = []
+        for col_num in range(1, min(sheet.max_column + 1, 50)):
+            header = sheet.cell(row=header_row, column=col_num).value
+            if header:
+                all_headers.append(f"Col {col_num}: {str(header)[:50]}")
+        logger.info(f"All headers found: {all_headers}")
+        
+        # Validate required columns
+        required_columns = ['amount', 'business_process_date', 'transaction_date']
+        missing = [col for col in required_columns if col not in self.column_map]
+        if missing:
+            logger.error(f"Missing required columns: {missing}")
+            logger.error(f"Available columns: {list(self.column_map.keys())}")
+            raise ValueError(f"Missing required columns: {missing}. Please check Excel format.")
     
     def parse_statement(self, excel_path: str) -> Dict[str, List[Dict]]:
         """
@@ -51,41 +91,52 @@ class ExcelProcessor:
             wb = openpyxl.load_workbook(excel_path, data_only=True)
             sheet = wb.active
             
-            # Process rows starting from row 15
-            for row_num in range(self.starting_row, sheet.max_row + 1):
-                # Check if this row has transaction data
-                amount_value = sheet.cell(row=row_num, column=self.COLS['amount']).value
+            # Find header row and map columns
+            self.header_row = self._find_header_row(sheet)
+            self._map_columns(sheet, self.header_row)
+            logger.info(f"Found header row at: {self.header_row}")
+            
+            # Start processing from the row after headers
+            data_start_row = self.header_row + 1
+            
+            # Process data rows
+            for row_num in range(data_start_row, sheet.max_row + 1):
+                # Check if this row has transaction data by looking for amount
+                amount_value = None
+                if 'amount' in self.column_map:
+                    amount_value = sheet.cell(row=row_num, column=self.column_map['amount']).value
+                
                 if amount_value is None:
                     continue
                 
-                # Determine cardholder name - use supplemental if available, otherwise basic
-                supp_first = self._clean_value(sheet.cell(row=row_num, column=self.COLS['supp_first_name']).value)
-                supp_last = self._clean_value(sheet.cell(row=row_num, column=self.COLS['supp_last_name']).value)
-                basic_first = self._clean_value(sheet.cell(row=row_num, column=self.COLS['basic_first_name']).value)
-                basic_last = self._clean_value(sheet.cell(row=row_num, column=self.COLS['basic_last_name']).value)
+                # Extract cardholder information
+                first_name = ""
+                last_name = ""
+                card_number = ""
                 
-                # Use supplemental cardholder if present, otherwise use basic
-                if supp_first and supp_last:
-                    first_name = supp_first.upper()
-                    last_name = supp_last.upper()
-                    card_number = self._clean_value(sheet.cell(row=row_num, column=self.COLS['supp_card_number']).value)
-                else:
-                    first_name = basic_first.upper() if basic_first else ""
-                    last_name = basic_last.upper() if basic_last else ""
-                    card_number = self._clean_value(sheet.cell(row=row_num, column=self.COLS['basic_card_number']).value)
+                # Get supplemental cardholder info (primary for our use)
+                if 'supp_first_name' in self.column_map:
+                    first_name = self._clean_value(sheet.cell(row=row_num, column=self.column_map['supp_first_name']).value)
+                if 'supp_last_name' in self.column_map:
+                    last_name = self._clean_value(sheet.cell(row=row_num, column=self.column_map['supp_last_name']).value)
+                if 'supp_card_number' in self.column_map:
+                    card_number = self._clean_value(sheet.cell(row=row_num, column=self.column_map['supp_card_number']).value)
                 
+                # Skip if no cardholder name
                 if not first_name or not last_name:
                     continue
                 
-                # Build cardholder name
+                # Make names uppercase for consistency
+                first_name = first_name.upper()
+                last_name = last_name.upper()
                 cardholder_name = f"{first_name} {last_name}"
                 
                 # Extract description/merchant from multiple columns
                 desc_parts = []
-                for i in range(1, 6):
+                for i in range(1, 17):  # Check up to 16 description columns
                     desc_col = f'description_{i}'
-                    if desc_col in self.COLS:
-                        desc_val = self._clean_value(sheet.cell(row=row_num, column=self.COLS[desc_col]).value)
+                    if desc_col in self.column_map:
+                        desc_val = self._clean_value(sheet.cell(row=row_num, column=self.column_map[desc_col]).value)
                         if desc_val:
                             desc_parts.append(desc_val)
                 
@@ -99,11 +150,11 @@ class ExcelProcessor:
                     "last_name": last_name,
                     "card_number": card_number,
                     "amount": self._clean_amount(amount_value),
-                    "transaction_date": self._clean_date(sheet.cell(row=row_num, column=self.COLS['transaction_date']).value),
-                    "posting_date": self._clean_date(sheet.cell(row=row_num, column=self.COLS['business_process_date']).value),
+                    "transaction_date": self._clean_date(sheet.cell(row=row_num, column=self.column_map.get('transaction_date', 0)).value) if 'transaction_date' in self.column_map else None,
+                    "posting_date": self._clean_date(sheet.cell(row=row_num, column=self.column_map.get('business_process_date', 0)).value) if 'business_process_date' in self.column_map else None,
                     "merchant": merchant_name,
                     "description": full_description,
-                    "reference_number": self._clean_value(sheet.cell(row=row_num, column=self.COLS['transaction_reference']).value),
+                    "reference_number": self._clean_value(sheet.cell(row=row_num, column=self.column_map.get('transaction_reference', 0)).value) if 'transaction_reference' in self.column_map else "",
                     "row_number": row_num
                 }
                 
@@ -114,6 +165,7 @@ class ExcelProcessor:
                 transactions_by_cardholder[cardholder_name].append(transaction)
             
             wb.close()
+            logger.info(f"Parsed {len(transactions_by_cardholder)} cardholders with transactions")
             
         except Exception as e:
             logger.error(f"Error parsing Excel file: {str(e)}")

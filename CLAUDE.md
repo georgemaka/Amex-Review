@@ -215,8 +215,16 @@ If delete fails with "Failed to delete statement":
 
 ### Excel Processing Errors
 If Excel upload fails:
-1. Verify column mappings in `excel_processor.py` match your Excel format
-2. Check for correct column indices for name, card number, amount, description
+1. The Excel processor dynamically finds headers by looking for "Product" in column A
+2. Required columns:
+   - "Supplemental Cardmember Last Name" - cardholder last name
+   - "Supplemental Cardmember First Name" - cardholder first name  
+   - "Supplemental Account Number" - cardholder card number
+   - "Business Process Date" - posting date
+   - "Transaction Date" - transaction date
+   - "Transaction Amount USD" - amount
+   - "Transaction Description 1-16" - multiple description columns
+3. Check logs for column mapping details: `docker compose logs celery`
 
 ### PDF Processing Issues
 If PDF splitting fails:
