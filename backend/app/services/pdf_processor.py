@@ -115,13 +115,7 @@ class PDFProcessor:
         for page_num, page in enumerate(pdf.pages, 1):
             text = page.extract_text() or ""
             
-            # Track blank pages - check for pages with only headers/footers
-            if self._is_blank_or_header_only_page(text):
-                blank_pages.append(page_num)
-                logger.debug(f"Page {page_num}: Blank or header-only page")
-                continue
-            
-            # Look for cardholder totals
+            # Look for cardholder totals FIRST (before blank page check)
             matches = self.cardholder_pattern.findall(text)
             
             if matches:
@@ -129,6 +123,10 @@ class PDFProcessor:
                 cardholder_totals.append((page_num, cardholder_name))
                 logger.info(f"Page {page_num}: Found 'Total for {cardholder_name}'")
                 first_total_found = True
+            elif self._is_blank_or_header_only_page(text):
+                # Check for blank pages AFTER checking for totals
+                blank_pages.append(page_num)
+                logger.debug(f"Page {page_num}: Blank or header-only page")
             elif not first_total_found:
                 # Pages before first "Total for" are summary pages
                 summary_pages.append(page_num)
@@ -246,6 +244,21 @@ class PDFProcessor:
         alpha_numeric_count = sum(c.isalnum() for c in remaining_text)
         if alpha_numeric_count < 20:  # Very few actual letters/numbers
             return True
+        
+        # Additional check: Look for transaction indicators
+        transaction_indicators = [
+            r'\$[\d,]+\.\d{2}',  # Dollar amounts
+            r'Transaction',
+            r'Payment',
+            r'Purchase',
+            r'Credit',
+            r'Debit',
+            r'Total for',  # Don't mark Total pages as blank!
+        ]
+        
+        for indicator in transaction_indicators:
+            if re.search(indicator, text, re.IGNORECASE):
+                return False  # Not blank if it has transaction data
         
         return False
     

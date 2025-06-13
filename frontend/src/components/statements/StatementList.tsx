@@ -272,7 +272,7 @@ const StatementList: React.FC = () => {
                 <TableCell>Excel File</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Created</TableCell>
-                <TableCell align="right">Actions</TableCell>
+                <TableCell align="right" sx={{ minWidth: 300 }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -311,14 +311,15 @@ const StatementList: React.FC = () => {
                     {format(new Date(statement.created_at), 'MMM dd, yyyy')}
                   </TableCell>
                   <TableCell align="right">
-                    <Tooltip title="View Progress">
-                      <IconButton
-                        size="small"
-                        onClick={() => navigate(`/statements/${statement.id}`)}
-                      >
-                        <Visibility />
-                      </IconButton>
-                    </Tooltip>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<Visibility />}
+                      onClick={() => navigate(`/statements/${statement.id}`)}
+                      sx={{ mr: 1 }}
+                    >
+                      View Details
+                    </Button>
                     
                     {user?.role === 'coder' && ['distributed', 'in_progress'].includes(statement.status) && (
                       <Tooltip title="Code Transactions">
