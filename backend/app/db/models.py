@@ -21,6 +21,7 @@ class StatementStatus(str, enum.Enum):
     DISTRIBUTED = "distributed"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
+    LOCKED = "locked"
     ERROR = "error"
 
 
@@ -127,12 +128,20 @@ class Statement(Base):
     processing_started_at = Column(DateTime(timezone=True), nullable=True)
     processing_completed_at = Column(DateTime(timezone=True), nullable=True)
     processing_error = Column(Text, nullable=True)
+    
+    # Locking fields
+    is_locked = Column(Boolean, default=False, nullable=False)
+    locked_at = Column(DateTime(timezone=True), nullable=True)
+    locked_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    lock_reason = Column(Text, nullable=True)
+    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     created_by_id = Column(Integer, ForeignKey("users.id"))
     
     # Relationships
     cardholder_statements = relationship("CardholderStatement", back_populates="statement", cascade="all, delete-orphan")
     created_by = relationship("User", foreign_keys=[created_by_id])
+    locked_by = relationship("User", foreign_keys=[locked_by_id])
     analytics = relationship("SpendingAnalytics", cascade="all, delete-orphan", overlaps="statement")
 
 

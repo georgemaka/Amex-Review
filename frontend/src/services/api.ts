@@ -97,7 +97,10 @@ class ApiService {
   }
 
   async getStatements(skip = 0, limit = 20) {
-    const response = await this.api.get('/statements', { params: { skip, limit } });
+    const response = await this.api.get('/statements', { 
+      params: { skip, limit },
+      headers: { 'Cache-Control': 'no-cache' }
+    });
     return response.data;
   }
 

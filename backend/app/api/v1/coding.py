@@ -2,7 +2,7 @@ from typing import List, Any, Optional
 from datetime import datetime, date
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, func
+from sqlalchemy import select, and_, or_, func, case
 from sqlalchemy.orm import selectinload, joinedload
 
 from app.core.security import get_current_user, check_user_role
@@ -10,12 +10,14 @@ from app.db.models import (
     User, UserRole, Transaction, TransactionStatus, CodingType,
     CardholderStatement, CardholderAssignment, Cardholder,
     Company, GLAccount, Job, JobPhase, JobCostType,
-    Equipment, EquipmentCostCode, EquipmentCostType
+    Equipment, EquipmentCostCode, EquipmentCostType,
+    Statement
 )
 from app.db.schemas import (
     TransactionWithCoding,
     TransactionCodingUpdate,
     BatchCodingRequest,
+    PaginatedTransactionsResponse,
     Company as CompanySchema,
     GLAccount as GLAccountSchema,
     Job as JobSchema,
@@ -30,11 +32,12 @@ from app.db.session import get_async_db
 router = APIRouter()
 
 
-@router.get("/transactions", response_model=List[TransactionWithCoding])
+@router.get("/transactions", response_model=PaginatedTransactionsResponse)
 async def list_coding_transactions(
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
     cardholder_id: Optional[int] = None,
+    statement_id: Optional[int] = None,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
     status: Optional[TransactionStatus] = None,
@@ -47,6 +50,7 @@ async def list_coding_transactions(
     # Build base query with all relationships
     query = select(Transaction).options(
         selectinload(Transaction.cardholder_statement).selectinload(CardholderStatement.cardholder),
+        selectinload(Transaction.cardholder_statement).selectinload(CardholderStatement.statement),
         selectinload(Transaction.coded_by),
         selectinload(Transaction.reviewed_by),
         selectinload(Transaction.category),
@@ -66,6 +70,10 @@ async def list_coding_transactions(
     # Filter by cardholder if specified
     if cardholder_id:
         query = query.where(CardholderStatement.cardholder_id == cardholder_id)
+    
+    # Filter by statement if specified
+    if statement_id:
+        query = query.where(CardholderStatement.statement_id == statement_id)
     
     # For non-admin users, only show transactions for their assigned cardholders
     if current_user.role != UserRole.ADMIN:
@@ -94,6 +102,33 @@ async def list_coding_transactions(
     if status:
         query = query.where(Transaction.status == status)
     
+    # Create a subquery for the filtered results
+    subq = query.subquery()
+    
+    # First, get total count and totals WITHOUT pagination
+    count_query = select(
+        func.count(subq.c.id).label('total_count'),
+        func.coalesce(func.sum(subq.c.amount), 0).label('total_amount'),
+        func.count(
+            case(
+                (subq.c.status.in_([TransactionStatus.CODED, TransactionStatus.REVIEWED]), 1),
+                else_=None
+            )
+        ).label('coded_count'),
+        func.coalesce(
+            func.sum(
+                case(
+                    (subq.c.status.in_([TransactionStatus.CODED, TransactionStatus.REVIEWED]), subq.c.amount),
+                    else_=0
+                )
+            ), 
+            0
+        ).label('coded_amount')
+    )
+    
+    totals_result = await db.execute(count_query)
+    totals = totals_result.one()
+    
     # Order by transaction date desc
     query = query.order_by(Transaction.transaction_date.desc())
     
@@ -103,7 +138,15 @@ async def list_coding_transactions(
     result = await db.execute(query)
     transactions = result.scalars().all()
     
-    return transactions
+    return PaginatedTransactionsResponse(
+        transactions=transactions,
+        total_count=totals.total_count or 0,
+        total_amount=float(totals.total_amount or 0),
+        coded_count=totals.coded_count or 0,
+        coded_amount=float(totals.coded_amount or 0),
+        page=skip // limit,
+        page_size=limit
+    )
 
 
 @router.put("/transactions/{transaction_id}", response_model=TransactionWithCoding)
@@ -126,6 +169,23 @@ async def code_transaction(
     
     if not transaction:
         raise HTTPException(status_code=404, detail="Transaction not found")
+    
+    # Check if the statement is locked
+    statement_query = select(Statement).where(
+        Statement.id == Transaction.cardholder_statement.has(
+            CardholderStatement.statement_id == transaction.cardholder_statement.statement_id
+        )
+    )
+    statement_result = await db.execute(
+        select(Statement).join(CardholderStatement).where(
+            CardholderStatement.id == transaction.cardholder_statement_id,
+            Statement.id == CardholderStatement.statement_id
+        )
+    )
+    statement = statement_result.scalar_one_or_none()
+    
+    if statement and statement.is_locked:
+        raise HTTPException(status_code=403, detail="Cannot code transactions in a locked statement")
     
     # Check permissions - only admin or assigned coder can code
     if current_user.role != UserRole.ADMIN:
@@ -179,6 +239,17 @@ async def batch_code_transactions(
     
     if len(transactions) != len(batch_request.transaction_ids):
         raise HTTPException(status_code=404, detail="Some transactions not found")
+    
+    # Check if any of the statements are locked
+    statement_ids = {t.cardholder_statement.statement_id for t in transactions}
+    locked_statements = await db.execute(
+        select(Statement).where(
+            Statement.id.in_(statement_ids),
+            Statement.is_locked == True
+        )
+    )
+    if locked_statements.scalars().first():
+        raise HTTPException(status_code=403, detail="Cannot code transactions in locked statements")
     
     # Check permissions for all transactions
     if current_user.role != UserRole.ADMIN:

@@ -19,7 +19,9 @@ from app.db.schemas import (
     Statement as StatementSchema,
     StatementUpload,
     StatementProgress,
-    StatementWithCardholderCount
+    StatementWithCardholderCount,
+    StatementLock,
+    StatementLockResponse
 )
 from app.db.session import get_async_db
 from app.tasks.statement_tasks import process_statement_task
@@ -537,3 +539,82 @@ async def download_all_files(
     except Exception as e:
         os.unlink(temp_zip.name)
         raise HTTPException(500, f"Failed to create ZIP: {str(e)}")
+
+
+@router.post("/{statement_id}/lock", response_model=StatementLockResponse)
+async def lock_statement(
+    statement_id: int,
+    lock_data: StatementLock,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(check_user_role([UserRole.ADMIN]))
+) -> Any:
+    """Lock a statement to prevent further coding."""
+    # Get statement
+    result = await db.execute(
+        select(Statement).where(Statement.id == statement_id)
+    )
+    statement = result.scalar_one_or_none()
+    
+    if not statement:
+        raise HTTPException(404, "Statement not found")
+    
+    if statement.is_locked:
+        raise HTTPException(400, "Statement is already locked")
+    
+    # Lock the statement
+    statement.is_locked = True
+    statement.locked_at = datetime.utcnow()
+    statement.locked_by_id = current_user.id
+    statement.lock_reason = lock_data.reason
+    # Don't change the status to LOCKED - keep the current status
+    # statement.status = StatementStatus.LOCKED
+    
+    await db.commit()
+    await db.refresh(statement)
+    
+    return {
+        "message": "Statement locked successfully",
+        "statement_id": statement_id,
+        "locked_at": statement.locked_at,
+        "locked_by": current_user.email,
+        "reason": statement.lock_reason
+    }
+
+
+@router.post("/{statement_id}/unlock", response_model=StatementLockResponse)
+async def unlock_statement(
+    statement_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(check_user_role([UserRole.ADMIN]))
+) -> Any:
+    """Unlock a statement to allow coding again."""
+    # Get statement
+    result = await db.execute(
+        select(Statement).where(Statement.id == statement_id)
+    )
+    statement = result.scalar_one_or_none()
+    
+    if not statement:
+        raise HTTPException(404, "Statement not found")
+    
+    if not statement.is_locked:
+        raise HTTPException(400, "Statement is not locked")
+    
+    # Unlock the statement
+    statement.is_locked = False
+    statement.locked_at = None
+    statement.locked_by_id = None
+    statement.lock_reason = None
+    # Don't change the status - keep the current status
+    # statement.status = StatementStatus.IN_PROGRESS
+    
+    await db.commit()
+    await db.refresh(statement)
+    
+    return {
+        "message": "Statement unlocked successfully",
+        "statement_id": statement_id,
+        "locked_at": None,
+        "locked_by": None,
+        "reason": None
+    }

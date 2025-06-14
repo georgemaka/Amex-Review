@@ -22,6 +22,7 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
+  TextField,
 } from '@mui/material';
 import {
   Add,
@@ -34,12 +35,15 @@ import {
   FolderOpen,
   People,
   ListAlt,
+  Lock,
+  LockOpen,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { RootState, AppDispatch } from '../../store';
 import { fetchStatements, deleteStatement } from '../../store/slices/statementSlice';
 import { addNotification } from '../../store/slices/uiSlice';
 import StatementUploadModal from './StatementUploadModal';
+import api from '../../services/api';
 
 const StatementList: React.FC = () => {
   const navigate = useNavigate();
@@ -56,6 +60,9 @@ const StatementList: React.FC = () => {
   const [processingStatements, setProcessingStatements] = useState<Set<number>>(new Set());
   const [pollErrorCount, setPollErrorCount] = useState(0);
   const [isManualRefreshing, setIsManualRefreshing] = useState(false);
+  const [lockDialogOpen, setLockDialogOpen] = useState(false);
+  const [statementToLock, setStatementToLock] = useState<any>(null);
+  const [lockReason, setLockReason] = useState('');
 
   const refreshStatements = async () => {
     try {
@@ -171,6 +178,8 @@ const StatementList: React.FC = () => {
         return 'warning';
       case 'completed':
         return 'success';
+      case 'locked':
+        return 'warning';
       case 'error':
         return 'error';
       default:
@@ -233,6 +242,70 @@ const StatementList: React.FC = () => {
   const handleDeleteCancel = () => {
     setDeleteDialogOpen(false);
     setStatementToDelete(null);
+  };
+
+  const handleLockClick = (statement: any) => {
+    console.log('Lock button clicked for statement:', statement);
+    setStatementToLock(statement);
+    setLockReason('');
+    setLockDialogOpen(true);
+  };
+
+  const handleLockConfirm = async () => {
+    console.log('Lock confirm clicked. Statement:', statementToLock, 'Reason:', lockReason);
+    if (!statementToLock) {
+      console.error('No statement to lock!');
+      return;
+    }
+
+    try {
+      const endpoint = statementToLock.is_locked 
+        ? `/statements/${statementToLock.id}/unlock`
+        : `/statements/${statementToLock.id}/lock`;
+      
+      console.log('Making API call to:', endpoint, {
+        id: statementToLock.id,
+        is_locked: statementToLock.is_locked,
+        endpoint,
+        reason: lockReason,
+        body: statementToLock.is_locked ? {} : { reason: lockReason }
+      });
+      
+      console.log('About to call api.post with:', {
+        url: endpoint,
+        data: statementToLock.is_locked ? {} : { reason: lockReason }
+      });
+      
+      const data = await api.post(endpoint, 
+        statementToLock.is_locked ? {} : { reason: lockReason }
+      );
+      
+      console.log('Lock/unlock response:', data);
+
+      dispatch(addNotification({
+        message: `Statement ${statementToLock.is_locked ? 'unlocked' : 'locked'} successfully`,
+        type: 'success',
+      }));
+
+      // Refresh the statements list
+      dispatch(fetchStatements({ skip: page * rowsPerPage, limit: rowsPerPage }));
+    } catch (error: any) {
+      console.error('Lock/unlock error:', error);
+      dispatch(addNotification({
+        message: error.response?.data?.detail || error.message || `Failed to ${statementToLock.is_locked ? 'unlock' : 'lock'} statement`,
+        type: 'error',
+      }));
+    }
+
+    setLockDialogOpen(false);
+    setStatementToLock(null);
+    setLockReason('');
+  };
+
+  const handleLockCancel = () => {
+    setLockDialogOpen(false);
+    setStatementToLock(null);
+    setLockReason('');
   };
 
   return (
@@ -314,6 +387,15 @@ const StatementList: React.FC = () => {
                           Auto-updating...
                         </Typography>
                       )}
+                      {statement.is_locked && (
+                        <Chip
+                          label="LOCKED"
+                          size="small"
+                          color="warning"
+                          icon={<Lock />}
+                          sx={{ ml: 1 }}
+                        />
+                      )}
                     </Box>
                   </TableCell>
                   <TableCell>
@@ -377,15 +459,26 @@ const StatementList: React.FC = () => {
                     )}
                     
                     {user?.role === 'admin' && (
-                      <Tooltip title="Delete Statement">
-                        <IconButton
-                          size="small"
-                          color="error"
-                          onClick={() => handleDeleteClick(statement.id)}
-                        >
-                          <Delete />
-                        </IconButton>
-                      </Tooltip>
+                      <>
+                        <Tooltip title={statement.is_locked ? "Unlock Statement" : "Lock Statement"}>
+                          <IconButton
+                            size="small"
+                            color={statement.is_locked ? "warning" : "default"}
+                            onClick={() => handleLockClick(statement)}
+                          >
+                            {statement.is_locked ? <Lock /> : <LockOpen />}
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Delete Statement">
+                          <IconButton
+                            size="small"
+                            color="error"
+                            onClick={() => handleDeleteClick(statement.id)}
+                          >
+                            <Delete />
+                          </IconButton>
+                        </Tooltip>
+                      </>
                     )}
                   </TableCell>
                 </TableRow>
@@ -457,6 +550,52 @@ const StatementList: React.FC = () => {
           </Button>
           <Button onClick={handleDeleteConfirm} color="error" variant="contained">
             Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Lock/Unlock Dialog */}
+      <Dialog
+        open={lockDialogOpen}
+        onClose={handleLockCancel}
+        aria-labelledby="lock-dialog-title"
+        aria-describedby="lock-dialog-description"
+      >
+        <DialogTitle id="lock-dialog-title">
+          {statementToLock?.is_locked ? 'Unlock Statement' : 'Lock Statement'}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText id="lock-dialog-description">
+            {statementToLock?.is_locked 
+              ? 'Are you sure you want to unlock this statement? Users will be able to code transactions again.'
+              : 'Are you sure you want to lock this statement? This will prevent any further coding of transactions.'}
+          </DialogContentText>
+          {!statementToLock?.is_locked && (
+            <TextField
+              autoFocus
+              margin="dense"
+              label="Lock Reason"
+              fullWidth
+              multiline
+              rows={3}
+              value={lockReason}
+              onChange={(e) => setLockReason(e.target.value)}
+              placeholder="Enter a reason for locking this statement..."
+              sx={{ mt: 2 }}
+            />
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleLockCancel} color="primary">
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleLockConfirm} 
+            color={statementToLock?.is_locked ? "primary" : "warning"} 
+            variant="contained"
+            disabled={!statementToLock?.is_locked && !lockReason.trim()}
+          >
+            {statementToLock?.is_locked ? 'Unlock' : 'Lock'}
           </Button>
         </DialogActions>
       </Dialog>

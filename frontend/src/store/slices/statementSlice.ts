@@ -8,10 +8,14 @@ export interface Statement {
   closing_date: string;
   pdf_filename: string;
   excel_filename: string;
-  status: 'pending' | 'processing' | 'split' | 'distributed' | 'in_progress' | 'completed' | 'error';
+  status: 'pending' | 'processing' | 'split' | 'distributed' | 'in_progress' | 'completed' | 'locked' | 'error';
   processing_started_at?: string;
   processing_completed_at?: string;
   processing_error?: string;
+  is_locked: boolean;
+  locked_at?: string;
+  locked_by_id?: number;
+  lock_reason?: string;
   created_at: string;
   cardholder_count?: number;
 }

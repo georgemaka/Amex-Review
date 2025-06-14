@@ -141,6 +141,10 @@ class Statement(StatementBase):
     processing_started_at: Optional[datetime]
     processing_completed_at: Optional[datetime]
     processing_error: Optional[str]
+    is_locked: bool = False
+    locked_at: Optional[datetime] = None
+    locked_by_id: Optional[int] = None
+    lock_reason: Optional[str] = None
     created_at: datetime
     created_by_id: Optional[int]
     
@@ -153,6 +157,18 @@ class StatementWithCardholderCount(Statement):
     
     class Config:
         from_attributes = True
+
+
+class StatementLock(BaseModel):
+    reason: str
+
+
+class StatementLockResponse(BaseModel):
+    message: str
+    statement_id: int
+    locked_at: Optional[datetime]
+    locked_by: Optional[str]
+    reason: Optional[str]
 
 
 # Transaction Schemas
@@ -362,6 +378,7 @@ class TransactionCodingUpdate(BaseModel):
 # First need to define CardholderStatement schema for the relationship
 class CardholderStatementBase(BaseModel):
     cardholder: Optional[Cardholder] = None
+    statement: Optional[Statement] = None
     
     class Config:
         from_attributes = True
@@ -378,6 +395,19 @@ class TransactionWithCoding(Transaction):
     equipment_cost_type: Optional[EquipmentCostType] = None
     coding_type: Optional[CodingType] = None
     cardholder_statement: Optional[CardholderStatementBase] = None
+    
+    class Config:
+        from_attributes = True
+
+
+class PaginatedTransactionsResponse(BaseModel):
+    transactions: List[TransactionWithCoding]
+    total_count: int
+    total_amount: float
+    coded_count: int
+    coded_amount: float
+    page: int
+    page_size: int
     
     class Config:
         from_attributes = True

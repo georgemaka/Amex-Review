@@ -84,6 +84,21 @@ def process_statement_task(self, statement_id: int) -> Dict:
             meta={"current": 75, "total": 100, "status": "CSV files generated"}
         )
         
+        # Log name matching for debugging
+        logger.info(f"PDF cardholders: {sorted(pdf_results.keys())}")
+        logger.info(f"Excel cardholders: {sorted(transactions_by_cardholder.keys())}")
+        
+        # Find mismatches
+        pdf_names = set(pdf_results.keys())
+        excel_names = set(transactions_by_cardholder.keys())
+        pdf_only = pdf_names - excel_names
+        excel_only = excel_names - pdf_names
+        
+        if pdf_only:
+            logger.warning(f"Cardholders in PDF but not in Excel: {sorted(pdf_only)}")
+        if excel_only:
+            logger.warning(f"Cardholders in Excel but not in PDF: {sorted(excel_only)}")
+        
         # Create database records
         total_cardholders = 0
         total_transactions = 0
@@ -111,6 +126,20 @@ def process_statement_task(self, statement_id: int) -> Dict:
             # Create cardholder statement
             pdf_info = pdf_results[cardholder_name]
             transactions = transactions_by_cardholder.get(cardholder_name, [])
+            
+            # If no exact match, try fuzzy matching
+            if not transactions and cardholder_name not in transactions_by_cardholder:
+                # Try to find a similar name in Excel data
+                cardholder_parts = cardholder_name.split()
+                for excel_name in transactions_by_cardholder.keys():
+                    excel_parts = excel_name.split()
+                    # Check if first and last names match (ignoring middle names/initials)
+                    if (len(cardholder_parts) >= 2 and len(excel_parts) >= 2 and
+                        cardholder_parts[0] == excel_parts[0] and  # First name matches
+                        cardholder_parts[-1] == excel_parts[-1]):   # Last name matches
+                        logger.info(f"Fuzzy match found: PDF '{cardholder_name}' matched with Excel '{excel_name}'")
+                        transactions = transactions_by_cardholder[excel_name]
+                        break
             
             cardholder_statement = CardholderStatement(
                 statement_id=statement_id,

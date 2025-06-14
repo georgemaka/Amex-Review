@@ -48,6 +48,10 @@ import {
   CallSplit,
   Add,
   Remove,
+  ChevronLeft,
+  ChevronRight,
+  Lock,
+  Refresh,
 } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -70,6 +74,11 @@ interface Transaction {
     cardholder: {
       id: number;
       full_name: string;
+    };
+    statement?: {
+      id: number;
+      is_locked: boolean;
+      lock_reason?: string;
     };
   };
   // Coding fields with IDs
@@ -103,9 +112,21 @@ const CodeTransactions: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [totalStats, setTotalStats] = useState<{
+    total_count: number;
+    total_amount: number;
+    coded_count: number;
+    coded_amount: number;
+  }>({
+    total_count: 0,
+    total_amount: 0,
+    coded_count: 0,
+    coded_amount: 0
+  });
   
   // Filters
   const [selectedCardholder, setSelectedCardholder] = useState<number | ''>('');
+  const [selectedStatement, setSelectedStatement] = useState<number | ''>('');
   const [dateFrom, setDateFrom] = useState<Date | null>(null);
   const [dateTo, setDateTo] = useState<Date | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -113,6 +134,7 @@ const CodeTransactions: React.FC = () => {
   
   // Reference data
   const [cardholders, setCardholders] = useState<any[]>([]);
+  const [statements, setStatements] = useState<any[]>([]);
   const [companies, setCompanies] = useState<any[]>([]);
   const [glAccounts, setGlAccounts] = useState<any[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
@@ -146,6 +168,17 @@ const CodeTransactions: React.FC = () => {
   const [recentlyUsedCompanies, setRecentlyUsedCompanies] = useState<number[]>([]);
   const [recentlyUsedGlAccounts, setRecentlyUsedGlAccounts] = useState<number[]>([]);
   
+  // Check if current statement is locked
+  const currentStatement = statements.find(s => s.id === selectedStatement);
+  const isStatementLocked = currentStatement?.is_locked || false;
+  
+  // Debug logging
+  useEffect(() => {
+    console.log('Current statement:', currentStatement);
+    console.log('Is statement locked?', isStatementLocked);
+    console.log('All statements:', statements);
+  }, [currentStatement, isStatementLocked, statements]);
+  
   // Split transaction
   const [splitDialogOpen, setSplitDialogOpen] = useState(false);
   const [splitTransaction, setSplitTransaction] = useState<Transaction | null>(null);
@@ -166,9 +199,18 @@ const CodeTransactions: React.FC = () => {
   const [selectedEquipmentCostType, setSelectedEquipmentCostType] = useState<number | ''>('');
   const [notes, setNotes] = useState('');
 
-  // Load reference data on mount
+  // Load reference data on mount and when window gains focus
   useEffect(() => {
     loadReferenceData();
+    
+    // Reload when window gains focus (e.g., switching tabs or returning to page)
+    const handleFocus = () => {
+      console.log('Window focused, reloading reference data...');
+      loadReferenceData();
+    };
+    
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, []);
 
   // Debug cardholders
@@ -176,10 +218,15 @@ const CodeTransactions: React.FC = () => {
     console.log('Cardholders state updated:', cardholders);
   }, [cardholders]);
 
+  // Reset page when filters change
+  useEffect(() => {
+    setPage(0);
+  }, [selectedCardholder, dateFrom, dateTo, statusFilter, searchTerm]);
+
   // Load transactions when filters change
   useEffect(() => {
     loadTransactions();
-  }, [selectedCardholder, dateFrom, dateTo, statusFilter, page, rowsPerPage]);
+  }, [selectedCardholder, selectedStatement, dateFrom, dateTo, statusFilter, page, rowsPerPage]);
 
   // Load job phases when job changes
   useEffect(() => {
@@ -256,6 +303,7 @@ const CodeTransactions: React.FC = () => {
     try {
       const [
         cardholderRes,
+        statementRes,
         companyRes,
         jobRes,
         jobCostTypeRes,
@@ -264,6 +312,7 @@ const CodeTransactions: React.FC = () => {
         equipmentCostTypeRes,
       ] = await Promise.all([
         api.getCardholders(), // Temporarily using regular endpoint to test
+        api.getStatements(),
         api.getCompanies(),
         api.getJobs(),
         api.getJobCostTypes(),
@@ -274,12 +323,19 @@ const CodeTransactions: React.FC = () => {
 
       console.log('Cardholder response:', cardholderRes);
       setCardholders(cardholderRes);
+      setStatements(statementRes);
       setCompanies(companyRes);
       setJobs(jobRes);
       setJobCostTypes(jobCostTypeRes);
       setEquipment(equipmentRes);
       setEquipmentCostCodes(equipmentCostCodeRes);
       setEquipmentCostTypes(equipmentCostTypeRes);
+      
+      // Set most recent unlocked statement as default
+      const unlockedStatements = statementRes.filter((s: any) => !s.is_locked);
+      if (unlockedStatements.length > 0 && !selectedStatement) {
+        setSelectedStatement(unlockedStatements[0].id);
+      }
     } catch (err: any) {
       console.error('Failed to load reference data:', err);
       console.error('Error details:', err.response?.data || err.message);
@@ -321,24 +377,41 @@ const CodeTransactions: React.FC = () => {
       }
       
       if (selectedCardholder) params.cardholder_id = selectedCardholder;
+      if (selectedStatement) params.statement_id = selectedStatement;
       if (dateFrom) params.date_from = format(dateFrom, 'yyyy-MM-dd');
       if (dateTo) params.date_to = format(dateTo, 'yyyy-MM-dd');
       
       console.log('Loading transactions with params:', params);
       console.log('Date from:', dateFrom, 'formatted:', params.date_from);
       console.log('Date to:', dateTo, 'formatted:', params.date_to);
+      console.log('Selected cardholder state value:', selectedCardholder);
+      console.log('Type of selectedCardholder:', typeof selectedCardholder);
       
       const res = await api.getCodingTransactions(params);
       console.log('Transactions loaded:', res);
       
-      // Ensure we have an array
-      const transactionArray = Array.isArray(res) ? res : [];
-      if (transactionArray.length > 0) {
-        console.log('First transaction structure:', transactionArray[0]);
-        console.log('Cardholder statement:', transactionArray[0].cardholder_statement);
+      // Handle new paginated response format
+      if (res.transactions) {
+        console.log('Number of transactions received:', res.transactions.length);
+        console.log('Total stats:', {
+          total_count: res.total_count,
+          total_amount: res.total_amount,
+          coded_count: res.coded_count,
+          coded_amount: res.coded_amount
+        });
+        
+        setTransactions(res.transactions);
+        setTotalStats({
+          total_count: res.total_count,
+          total_amount: res.total_amount,
+          coded_count: res.coded_count,
+          coded_amount: res.coded_amount
+        });
+      } else {
+        // Fallback for old response format
+        const transactionArray = Array.isArray(res) ? res : [];
+        setTransactions(transactionArray);
       }
-      
-      setTransactions(transactionArray);
     } catch (err: any) {
       console.error('Failed to load transactions:', err);
       console.error('Error response:', err.response);
@@ -372,9 +445,9 @@ const CodeTransactions: React.FC = () => {
     );
   });
 
-  // Calculate coding progress
-  const codedCount = filteredTransactions.filter(t => t.status === 'coded' || t.status === 'reviewed').length;
-  const totalCount = filteredTransactions.length;
+  // Calculate coding progress - use total stats if available
+  const codedCount = totalStats.coded_count || filteredTransactions.filter(t => t.status === 'coded' || t.status === 'reviewed').length;
+  const totalCount = totalStats.total_count || filteredTransactions.length;
   const progressPercentage = totalCount > 0 ? (codedCount / totalCount) * 100 : 0;
 
   // Sort filtered transactions
@@ -388,8 +461,16 @@ const CodeTransactions: React.FC = () => {
         bValue = new Date(b.transaction_date).getTime();
         break;
       case 'cardholder':
+        // First sort by cardholder name
         aValue = a.cardholder_statement?.cardholder?.full_name || '';
         bValue = b.cardholder_statement?.cardholder?.full_name || '';
+        
+        // If same cardholder, sort by transaction date (newest first)
+        if (aValue === bValue) {
+          const aDate = new Date(a.transaction_date).getTime();
+          const bDate = new Date(b.transaction_date).getTime();
+          return bDate - aDate; // Always descending for date within same cardholder
+        }
         break;
       case 'description':
         aValue = extractMerchantName(a.description);
@@ -405,6 +486,11 @@ const CodeTransactions: React.FC = () => {
         break;
       default:
         return 0;
+    }
+    
+    // Skip the normal comparison if we already handled it (cardholder case with same name)
+    if (orderBy === 'cardholder' && aValue === bValue) {
+      return 0; // Already handled above
     }
     
     if (order === 'asc') {
@@ -486,7 +572,7 @@ const CodeTransactions: React.FC = () => {
     
     setLoading(true);
     try {
-      await api.put(`/api/v1/coding/transactions/${transactionId}/code`, {
+      await api.codeTransaction(transactionId, {
         coding_type: coding.codingType,
         company_id: coding.selectedCompany || null,
         gl_account_id: coding.selectedGlAccount || null,
@@ -809,13 +895,60 @@ const CodeTransactions: React.FC = () => {
 
   return (
     <Box sx={{ pb: 4 }}>
-      <Typography variant="h4" gutterBottom sx={{ mt: 0 }}>
-        Code Transactions
-      </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+        <Typography variant="h4" sx={{ mt: 0 }}>
+          Code Transactions
+        </Typography>
+        <Tooltip title="Refresh data">
+          <IconButton 
+            onClick={() => {
+              loadReferenceData();
+              loadTransactions();
+            }}
+            color="primary"
+            sx={{ ml: 2 }}
+          >
+            <Refresh />
+          </IconButton>
+        </Tooltip>
+      </Box>
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
+        </Alert>
+      )}
+
+      {/* Locked Statement Warning */}
+      {isStatementLocked && (
+        <Alert 
+          severity="warning" 
+          icon={<Lock />}
+          sx={{ 
+            mb: 2,
+            borderLeft: '4px solid',
+            borderLeftColor: 'warning.main',
+            backgroundColor: 'warning.lighter',
+            '& .MuiAlert-icon': {
+              color: 'warning.main'
+            }
+          }}
+        >
+          <Box>
+            <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 0.5 }}>
+              This statement is locked
+            </Typography>
+            <Typography variant="body2">
+              {user?.role === 'admin' 
+                ? 'You can view transactions but coding is disabled. To make changes, unlock the statement from the Statements page.'
+                : 'This statement has been finalized. You can view transactions but cannot make any changes.'}
+            </Typography>
+            {currentStatement?.lock_reason && (
+              <Typography variant="caption" sx={{ display: 'block', mt: 1, fontStyle: 'italic' }}>
+                Reason: {currentStatement.lock_reason}
+              </Typography>
+            )}
+          </Box>
         </Alert>
       )}
 
@@ -831,13 +964,15 @@ const CodeTransactions: React.FC = () => {
       }}>
         <Grid container spacing={2}>
           {/* First Row */}
-          <Grid item xs={12} md={3}>
+          <Grid item xs={12} md={2}>
             <Autocomplete
               size="small"
               options={cardholders}
               getOptionLabel={(option) => option.full_name || ''}
               value={cardholders.find(c => c.id === selectedCardholder) || null}
               onChange={(_, newValue) => {
+                console.log('Selected cardholder:', newValue);
+                console.log('Setting cardholder ID:', newValue?.id);
                 setSelectedCardholder(newValue?.id || '');
               }}
               renderInput={(params) => (
@@ -852,7 +987,39 @@ const CodeTransactions: React.FC = () => {
             />
           </Grid>
 
-          <Grid item xs={12} md={3}>
+          <Grid item xs={12} md={2}>
+            <Autocomplete
+              size="small"
+              options={statements}
+              getOptionLabel={(option) => `${option.month}/${option.year}${option.is_locked ? ' (Locked)' : ''}`}
+              value={statements.find(s => s.id === selectedStatement) || null}
+              onChange={(_, newValue) => {
+                setSelectedStatement(newValue?.id || '');
+              }}
+              renderInput={(params) => (
+                <TextField {...params} label="Statement" placeholder="Select statement..." />
+              )}
+              renderOption={(props, option) => (
+                <Box component="li" {...props}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                    <span>{option.month}/{option.year}</span>
+                    {option.is_locked && (
+                      <Chip 
+                        label="LOCKED" 
+                        size="small" 
+                        color="warning" 
+                        icon={<Lock />}
+                        sx={{ ml: 'auto' }}
+                      />
+                    )}
+                  </Box>
+                </Box>
+              )}
+              isOptionEqualToValue={(option, value) => option.id === value?.id}
+            />
+          </Grid>
+
+          <Grid item xs={12} md={2}>
             <LocalizationProvider dateAdapter={AdapterDateFns}>
               <DatePicker
                 label="Date From"
@@ -865,7 +1032,7 @@ const CodeTransactions: React.FC = () => {
             </LocalizationProvider>
           </Grid>
 
-          <Grid item xs={12} md={3}>
+          <Grid item xs={12} md={2}>
             <LocalizationProvider dateAdapter={AdapterDateFns}>
               <DatePicker
                 label="Date To"
@@ -878,7 +1045,7 @@ const CodeTransactions: React.FC = () => {
             </LocalizationProvider>
           </Grid>
 
-          <Grid item xs={12} md={3}>
+          <Grid item xs={12} md={2}>
             <Button
               variant="outlined"
               startIcon={<Clear />}
@@ -888,6 +1055,7 @@ const CodeTransactions: React.FC = () => {
                 setDateTo(null);
                 setStatusFilter('all');
                 setSearchTerm('');
+                // Don't clear statement selection
               }}
               fullWidth
               sx={{ height: '40px' }}
@@ -968,6 +1136,7 @@ const CodeTransactions: React.FC = () => {
               color="primary"
               startIcon={<BatchPrediction />}
               onClick={() => handleOpenCodingDialog()}
+              disabled={isStatementLocked}
             >
               Batch Code
             </Button>
@@ -976,12 +1145,59 @@ const CodeTransactions: React.FC = () => {
       )}
 
       {/* Results count and help text */}
-      <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        {searchTerm && !loading && (
-          <Typography variant="body2" color="text.secondary">
-            Showing {sortedTransactions.length} of {transactions.length} transactions
-          </Typography>
-        )}
+      <Box sx={{ mb: 2 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+            {!loading && (
+              <>
+                <Typography variant="body2" color="text.secondary">
+                  {totalStats.total_count > 0 
+                    ? `${transactions.length} of ${totalStats.total_count} transactions`
+                    : `${transactions.length} transactions`}
+                </Typography>
+                {transactions.length > 0 && (
+                  <Typography variant="body2" color="text.secondary" sx={{ 
+                    borderLeft: '1px solid',
+                    borderColor: 'divider',
+                    pl: 2,
+                    fontWeight: 500
+                  }}>
+                    Page total: ${sortedTransactions.reduce((sum, t) => sum + t.amount, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {totalStats.total_amount > 0 && ` of $${totalStats.total_amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                  </Typography>
+                )}
+              </>
+            )}
+          </Box>
+          
+          {/* Top Pagination Controls */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="body2" color="text.secondary">
+              {transactions.length === 0 
+                ? 'No transactions' 
+                : transactions.length < rowsPerPage && page === 0
+                  ? `Page 1 of 1`
+                  : `Page ${page + 1}`}
+            </Typography>
+            <IconButton 
+              size="small" 
+              onClick={() => setPage(page - 1)} 
+              disabled={page === 0}
+              sx={{ border: '1px solid rgba(0, 0, 0, 0.12)' }}
+            >
+              <ChevronLeft />
+            </IconButton>
+            <IconButton 
+              size="small" 
+              onClick={() => setPage(page + 1)} 
+              disabled={transactions.length === 0 || transactions.length < rowsPerPage}
+              sx={{ border: '1px solid rgba(0, 0, 0, 0.12)' }}
+            >
+              <ChevronRight />
+            </IconButton>
+          </Box>
+        </Box>
+        
         <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
           <Typography variant="caption" color="text.secondary">
             Click merchant name to highlight similar transactions • Select GL/Job/Equipment to start coding
@@ -1009,6 +1225,7 @@ const CodeTransactions: React.FC = () => {
                         indeterminate={selectedTransactions.length > 0 && selectedTransactions.length < filteredTransactions.length}
                         checked={filteredTransactions.length > 0 && selectedTransactions.length === filteredTransactions.length}
                         onChange={handleSelectAll}
+                        disabled={isStatementLocked}
                       />
                     </TableCell>
                     <TableCell sx={{ width: 100 }}>
@@ -1061,7 +1278,9 @@ const CodeTransactions: React.FC = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {sortedTransactions.map((transaction) => (
+                  {sortedTransactions.map((transaction) => {
+                    const isTransactionLocked = transaction.cardholder_statement?.statement?.is_locked || false;
+                    return (
                     <TableRow
                       key={transaction.id}
                       hover
@@ -1091,13 +1310,21 @@ const CodeTransactions: React.FC = () => {
                         <Checkbox
                           checked={selectedTransactions.includes(transaction.id)}
                           onChange={() => handleSelectTransaction(transaction.id)}
+                          disabled={isStatementLocked || isTransactionLocked}
                         />
                       </TableCell>
                       <TableCell>
                         {format(new Date(transaction.transaction_date), 'MM/dd/yyyy')}
                       </TableCell>
                       <TableCell>
-                        {transaction.cardholder_statement?.cardholder?.full_name || 'Unknown'}
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          {transaction.cardholder_statement?.cardholder?.full_name || 'Unknown'}
+                          {isTransactionLocked && (
+                            <Tooltip title="This transaction's statement is locked">
+                              <Lock sx={{ fontSize: 16, color: 'warning.main' }} />
+                            </Tooltip>
+                          )}
+                        </Box>
                       </TableCell>
                       <TableCell>
                         <Box sx={{ maxWidth: 400 }}>
@@ -1157,7 +1384,7 @@ const CodeTransactions: React.FC = () => {
                               value={selectedCodingTypes[transaction.id] || null}
                               exclusive
                               onChange={(e, newType) => {
-                                if (newType) {
+                                if (newType && !isStatementLocked && !isTransactionLocked) {
                                   setSelectedCodingTypes(prev => ({...prev, [transaction.id]: newType}));
                                   
                                   // Find company 01 - Sukut Construction, LLC
@@ -1180,6 +1407,7 @@ const CodeTransactions: React.FC = () => {
                                 }
                               }}
                               size="small"
+                              disabled={isStatementLocked || isTransactionLocked}
                             >
                               <ToggleButton value="gl_account" sx={{ px: 0.75, py: 0.25, fontSize: '0.75rem' }}>
                                 <Business sx={{ fontSize: 16, mr: 0.25 }} />
@@ -1404,12 +1632,12 @@ const CodeTransactions: React.FC = () => {
                              (selectedCodingTypes[transaction.id] === 'job' && inlineCoding[transaction.id]?.selectedJob) ||
                              (selectedCodingTypes[transaction.id] === 'equipment' && inlineCoding[transaction.id]?.selectedEquipment))) ? (
                             <>
-                              <Tooltip title="Save">
+                              <Tooltip title={isStatementLocked || isTransactionLocked ? "Statement is locked" : "Save"}>
                                 <IconButton
                                   size="small"
                                   color="success"
                                   onClick={() => handleSaveInlineCoding(transaction.id)}
-                                  disabled={!inlineCoding[transaction.id]?.selectedCompany && !inlineCoding[transaction.id]?.selectedJob && !inlineCoding[transaction.id]?.selectedEquipment}
+                                  disabled={isStatementLocked || isTransactionLocked || (!inlineCoding[transaction.id]?.selectedCompany && !inlineCoding[transaction.id]?.selectedJob && !inlineCoding[transaction.id]?.selectedEquipment)}
                                 >
                                   <Save />
                                 </IconButton>
@@ -1484,11 +1712,12 @@ const CodeTransactions: React.FC = () => {
                                   </Tooltip>
                                 ) : null;
                               })()}
-                              <Tooltip title="Split transaction into multiple lines">
+                              <Tooltip title={isStatementLocked || isTransactionLocked ? "Statement is locked" : "Split transaction into multiple lines"}>
                                 <IconButton
                                   size="small"
                                   color="secondary"
                                   onClick={() => openSplitDialog(transaction)}
+                                  disabled={isStatementLocked || isTransactionLocked}
                                 >
                                   <CallSplit />
                                 </IconButton>
@@ -1498,7 +1727,8 @@ const CodeTransactions: React.FC = () => {
                         </Box>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                   {sortedTransactions.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
@@ -1525,15 +1755,38 @@ const CodeTransactions: React.FC = () => {
 
             <TablePagination
               component="div"
-              count={-1}
+              count={transactions.length === 0 ? 0 : (transactions.length < rowsPerPage ? transactions.length : -1)}
               page={page}
-              onPageChange={(_, newPage) => setPage(newPage)}
+              onPageChange={(_, newPage) => {
+                // Don't allow navigating to next page if current page has fewer items than rowsPerPage
+                if (transactions.length < rowsPerPage && newPage > page) {
+                  return;
+                }
+                setPage(newPage);
+              }}
               rowsPerPage={rowsPerPage}
               onRowsPerPageChange={(e) => {
                 setRowsPerPage(parseInt(e.target.value, 10));
                 setPage(0);
               }}
               rowsPerPageOptions={[10, 25, 50, 100]}
+              // Disable next button when there are no transactions or fewer than rowsPerPage
+              nextIconButtonProps={{
+                disabled: transactions.length === 0 || transactions.length < rowsPerPage
+              }}
+              labelDisplayedRows={({ from, to, count }) => {
+                if (transactions.length === 0) {
+                  return 'No transactions';
+                }
+                // If we have fewer items than rowsPerPage, we're on the last page
+                if (transactions.length < rowsPerPage) {
+                  const start = page * rowsPerPage + 1;
+                  const end = start + transactions.length - 1;
+                  return `${start}-${end} of ${end}`;
+                }
+                // Otherwise show the standard "of more than" text
+                return `${from}-${to} of more than ${to}`;
+              }}
             />
           </>
         )}
