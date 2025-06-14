@@ -717,6 +717,15 @@ const CodeTransactions: React.FC = () => {
           updatedLine.amount = (value / 100) * splitTransaction.amount;
         }
         
+        // Reset GL account when company changes
+        if (field === 'selectedCompany') {
+          updatedLine.selectedGlAccount = '';
+          // Load GL accounts for the selected company
+          if (value) {
+            loadGlAccounts(value as number);
+          }
+        }
+        
         return updatedLine;
       }
       return line;
@@ -1150,13 +1159,24 @@ const CodeTransactions: React.FC = () => {
                               onChange={(e, newType) => {
                                 if (newType) {
                                   setSelectedCodingTypes(prev => ({...prev, [transaction.id]: newType}));
+                                  
+                                  // Find company 01 - Sukut Construction, LLC
+                                  const defaultCompany = companies.find(c => c.code === '01' && c.name.includes('Sukut Construction'));
+                                  
                                   setInlineCoding(prev => ({
                                     ...prev,
                                     [transaction.id]: {
                                       ...prev[transaction.id],
-                                      codingType: newType
+                                      codingType: newType,
+                                      // Default to company 01 when Job is selected
+                                      selectedCompany: newType === 'job' && defaultCompany ? defaultCompany.id : prev[transaction.id]?.selectedCompany || ''
                                     }
                                   }));
+                                  
+                                  // Load GL accounts if Job is selected and company is set
+                                  if (newType === 'job' && defaultCompany) {
+                                    loadGlAccounts(defaultCompany.id);
+                                  }
                                 }
                               }}
                               size="small"
@@ -1177,144 +1197,191 @@ const CodeTransactions: React.FC = () => {
                             
                             {selectedCodingTypes[transaction.id] === 'gl_account' && (
                               <>
-                                <FormControl size="small" sx={{ minWidth: 90 }}>
-                                  <Select
-                                    value={inlineCoding[transaction.id]?.selectedCompany || ''}
-                                    onChange={(e) => {
+                                {/* Company Selection for GL */}
+                                <Autocomplete
+                                  size="small"
+                                  options={sortWithRecentlyUsed(companies, recentlyUsedCompanies)}
+                                  getOptionLabel={(option) => `${option.code} - ${option.name}`}
+                                  value={companies.find(c => c.id === inlineCoding[transaction.id]?.selectedCompany) || null}
+                                  onChange={(e, newValue) => {
+                                    const companyId = newValue?.id || '';
+                                    setInlineCoding(prev => ({
+                                      ...prev,
+                                      [transaction.id]: {
+                                        ...prev[transaction.id],
+                                        selectedCompany: companyId,
+                                        codingType: 'gl_account',
+                                        selectedGlAccount: '' // Reset GL account when company changes
+                                      }
+                                    }));
+                                    // Load GL accounts for the selected company
+                                    if (companyId) {
+                                      loadGlAccounts(companyId);
+                                    }
+                                  }}
+                                  renderOption={(props, option) => (
+                                    <li {...props}>
+                                      {recentlyUsedCompanies.includes(option.id) && <span style={{ marginRight: 4 }}>★</span>}
+                                      {option.code} - {option.name}
+                                    </li>
+                                  )}
+                                  renderInput={(params) => (
+                                    <TextField {...params} placeholder="Company" variant="outlined" />
+                                  )}
+                                  sx={{ minWidth: 200 }}
+                                />
+                                
+                                {/* GL Account Selection - only show if company is selected */}
+                                {inlineCoding[transaction.id]?.selectedCompany && (
+                                  <Autocomplete
+                                    size="small"
+                                    options={sortWithRecentlyUsed(
+                                      glAccounts.filter(gl => gl.company_id === inlineCoding[transaction.id]?.selectedCompany),
+                                      recentlyUsedGlAccounts
+                                    )}
+                                    getOptionLabel={(option) => `${option.account_code} - ${option.description}`}
+                                    value={glAccounts.find(gl => gl.id === inlineCoding[transaction.id]?.selectedGlAccount) || null}
+                                    onChange={(e, newValue) => {
                                       setInlineCoding(prev => ({
                                         ...prev,
                                         [transaction.id]: {
                                           ...prev[transaction.id],
-                                          selectedCompany: e.target.value,
-                                          codingType: 'gl_account'
+                                          selectedGlAccount: newValue?.id || ''
                                         }
                                       }));
                                     }}
-                                    displayEmpty
-                                    size="small"
-                                  >
-                                    <MenuItem value="">Company</MenuItem>
-                                    {recentlyUsedCompanies.length > 0 && (
-                                      <MenuItem disabled>
-                                        <Typography variant="caption" color="text.secondary">Recently Used</Typography>
-                                      </MenuItem>
+                                    renderOption={(props, option) => (
+                                      <li {...props}>
+                                        {recentlyUsedGlAccounts.includes(option.id) && <span style={{ marginRight: 4 }}>★</span>}
+                                        {option.account_code} - {option.description}
+                                      </li>
                                     )}
-                                    {sortWithRecentlyUsed(companies, recentlyUsedCompanies).map((company, index) => (
-                                      <MenuItem key={company.id} value={company.id}>
-                                        {recentlyUsedCompanies.includes(company.id) && '★ '}
-                                        {company.code} - {company.name}
-                                        {index === recentlyUsedCompanies.length - 1 && recentlyUsedCompanies.length > 0 && (
-                                          <Box component="span" sx={{ display: 'block', borderBottom: '1px solid #ddd', mt: 1 }} />
-                                        )}
-                                      </MenuItem>
-                                    ))}
-                                  </Select>
-                                </FormControl>
-                                {inlineCoding[transaction.id]?.selectedCompany && (
-                                  <FormControl size="small" sx={{ minWidth: 110 }}>
-                                    <Select
-                                      value={inlineCoding[transaction.id]?.selectedGlAccount || ''}
-                                      onChange={(e) => {
-                                        setInlineCoding(prev => ({
-                                          ...prev,
-                                          [transaction.id]: {
-                                            ...prev[transaction.id],
-                                            selectedGlAccount: e.target.value
-                                          }
-                                        }));
-                                      }}
-                                      displayEmpty
-                                      size="small"
-                                    >
-                                      <MenuItem value="">GL Account</MenuItem>
-                                      {recentlyUsedGlAccounts.length > 0 && (
-                                        <MenuItem disabled>
-                                          <Typography variant="caption" color="text.secondary">Recently Used</Typography>
-                                        </MenuItem>
-                                      )}
-                                      {sortWithRecentlyUsed(
-                                        glAccounts.filter(gl => gl.company_id === inlineCoding[transaction.id]?.selectedCompany),
-                                        recentlyUsedGlAccounts
-                                      ).map((gl, index) => {
-                                        const isRecentlyUsed = recentlyUsedGlAccounts.includes(gl.id);
-                                        const isLastRecent = index === recentlyUsedGlAccounts.filter(id => 
-                                          glAccounts.find(g => g.id === id && g.company_id === inlineCoding[transaction.id]?.selectedCompany)
-                                        ).length - 1;
-                                        return (
-                                          <MenuItem key={gl.id} value={gl.id}>
-                                            {isRecentlyUsed && '★ '}
-                                            {gl.account_code} - {gl.description}
-                                          </MenuItem>
-                                        );
-                                      })}
-                                    </Select>
-                                  </FormControl>
+                                    renderInput={(params) => (
+                                      <TextField {...params} placeholder="GL Account" variant="outlined" />
+                                    )}
+                                    sx={{ minWidth: 250 }}
+                                  />
                                 )}
                               </>
                             )}
                             
                             {selectedCodingTypes[transaction.id] === 'job' && (
-                              <FormControl size="small" sx={{ minWidth: 140 }}>
-                                <Select
-                                  value={inlineCoding[transaction.id]?.selectedJob || ''}
-                                  onChange={(e) => {
+                              <>
+                                {/* Company Selection for Job */}
+                                <Autocomplete
+                                  size="small"
+                                  options={sortWithRecentlyUsed(companies, recentlyUsedCompanies)}
+                                  getOptionLabel={(option) => `${option.code} - ${option.name}`}
+                                  value={companies.find(c => c.id === inlineCoding[transaction.id]?.selectedCompany) || null}
+                                  onChange={(e, newValue) => {
                                     setInlineCoding(prev => ({
                                       ...prev,
                                       [transaction.id]: {
                                         ...prev[transaction.id],
-                                        selectedJob: e.target.value
+                                        selectedCompany: newValue?.id || '',
+                                        selectedGlAccount: '' // Reset GL account when company changes
                                       }
                                     }));
+                                    if (newValue?.id) {
+                                      loadGlAccounts(newValue.id);
+                                    }
                                   }}
-                                  displayEmpty
-                                  size="small"
-                                >
-                                  <MenuItem value="">Select Job</MenuItem>
-                                  {recentlyUsedJobs.length > 0 && (
-                                    <MenuItem disabled>
-                                      <Typography variant="caption" color="text.secondary">Recently Used</Typography>
-                                    </MenuItem>
+                                  renderOption={(props, option) => (
+                                    <li {...props}>
+                                      {recentlyUsedCompanies.includes(option.id) && <span style={{ marginRight: 4 }}>★</span>}
+                                      {option.code} - {option.name}
+                                    </li>
                                   )}
-                                  {sortWithRecentlyUsed(jobs, recentlyUsedJobs).map((job, index) => (
-                                    <MenuItem key={job.id} value={job.id}>
-                                      {recentlyUsedJobs.includes(job.id) && '★ '}
-                                      {job.job_number} - {job.name}
-                                    </MenuItem>
-                                  ))}
-                                </Select>
-                              </FormControl>
+                                  renderInput={(params) => (
+                                    <TextField {...params} placeholder="Company" variant="outlined" />
+                                  )}
+                                  sx={{ minWidth: 200 }}
+                                />
+                                
+                                {/* Job Selection */}
+                                <Autocomplete
+                                  size="small"
+                                  options={sortWithRecentlyUsed(jobs, recentlyUsedJobs)}
+                                  getOptionLabel={(option) => `${option.job_number} - ${option.name}`}
+                                  value={jobs.find(j => j.id === inlineCoding[transaction.id]?.selectedJob) || null}
+                                  onChange={(e, newValue) => {
+                                    const jobId = newValue?.id || '';
+                                    setInlineCoding(prev => ({
+                                      ...prev,
+                                      [transaction.id]: {
+                                        ...prev[transaction.id],
+                                        selectedJob: jobId,
+                                        selectedJobPhase: '' // Reset phase when job changes
+                                      }
+                                    }));
+                                    // Load phases for the selected job
+                                    if (jobId) {
+                                      loadJobPhases(jobId);
+                                    }
+                                  }}
+                                  renderOption={(props, option) => (
+                                    <li {...props}>
+                                      {recentlyUsedJobs.includes(option.id) && <span style={{ marginRight: 4 }}>★</span>}
+                                      {option.job_number} - {option.name}
+                                    </li>
+                                  )}
+                                  renderInput={(params) => (
+                                    <TextField {...params} placeholder="Select Job" variant="outlined" />
+                                  )}
+                                  sx={{ minWidth: 180 }}
+                                />
+                                
+                                {/* Phase Selection - only show if job is selected */}
+                                {inlineCoding[transaction.id]?.selectedJob && (
+                                  <Autocomplete
+                                    size="small"
+                                    options={jobPhases}
+                                    getOptionLabel={(option) => `${option.phase_number} - ${option.description}`}
+                                    value={jobPhases.find(p => p.id === inlineCoding[transaction.id]?.selectedJobPhase) || null}
+                                    onChange={(e, newValue) => {
+                                      setInlineCoding(prev => ({
+                                        ...prev,
+                                        [transaction.id]: {
+                                          ...prev[transaction.id],
+                                          selectedJobPhase: newValue?.id || ''
+                                        }
+                                      }));
+                                    }}
+                                    renderInput={(params) => (
+                                      <TextField {...params} placeholder="Select Phase" variant="outlined" />
+                                    )}
+                                    sx={{ minWidth: 150 }}
+                                  />
+                                )}
+                              </>
                             )}
                             
                             {selectedCodingTypes[transaction.id] === 'equipment' && (
-                              <FormControl size="small" sx={{ minWidth: 140 }}>
-                                <Select
-                                  value={inlineCoding[transaction.id]?.selectedEquipment || ''}
-                                  onChange={(e) => {
-                                    setInlineCoding(prev => ({
-                                      ...prev,
-                                      [transaction.id]: {
-                                        ...prev[transaction.id],
-                                        selectedEquipment: e.target.value
-                                      }
-                                    }));
-                                  }}
-                                  displayEmpty
-                                  size="small"
-                                >
-                                  <MenuItem value="">Select Equipment</MenuItem>
-                                  {recentlyUsedEquipment.length > 0 && (
-                                    <MenuItem disabled>
-                                      <Typography variant="caption" color="text.secondary">Recently Used</Typography>
-                                    </MenuItem>
-                                  )}
-                                  {sortWithRecentlyUsed(equipment, recentlyUsedEquipment).map((eq, index) => (
-                                    <MenuItem key={eq.id} value={eq.id}>
-                                      {recentlyUsedEquipment.includes(eq.id) && '★ '}
-                                      {eq.equipment_number} - {eq.description}
-                                    </MenuItem>
-                                  ))}
-                                </Select>
-                              </FormControl>
+                              <Autocomplete
+                                size="small"
+                                options={sortWithRecentlyUsed(equipment, recentlyUsedEquipment)}
+                                getOptionLabel={(option) => `${option.equipment_number} - ${option.description}`}
+                                value={equipment.find(eq => eq.id === inlineCoding[transaction.id]?.selectedEquipment) || null}
+                                onChange={(e, newValue) => {
+                                  setInlineCoding(prev => ({
+                                    ...prev,
+                                    [transaction.id]: {
+                                      ...prev[transaction.id],
+                                      selectedEquipment: newValue?.id || ''
+                                    }
+                                  }));
+                                }}
+                                renderOption={(props, option) => (
+                                  <li {...props}>
+                                    {recentlyUsedEquipment.includes(option.id) && <span style={{ marginRight: 4 }}>★</span>}
+                                    {option.equipment_number} - {option.description}
+                                  </li>
+                                )}
+                                renderInput={(params) => (
+                                  <TextField {...params} placeholder="Select Equipment" variant="outlined" />
+                                )}
+                                sx={{ minWidth: 250 }}
+                              />
                             )}
                           </Box>
                         ) : (
@@ -1849,7 +1916,7 @@ const CodeTransactions: React.FC = () => {
                             <MenuItem value="">Select Company</MenuItem>
                             {companies.map((company) => (
                               <MenuItem key={company.id} value={company.id}>
-                                {company.name}
+                                {company.code} - {company.name}
                               </MenuItem>
                             ))}
                           </Select>
@@ -1864,11 +1931,13 @@ const CodeTransactions: React.FC = () => {
                             label="GL Account"
                           >
                             <MenuItem value="">Select GL Account</MenuItem>
-                            {glAccounts.map((account) => (
-                              <MenuItem key={account.id} value={account.id}>
-                                {account.account_number} - {account.description}
-                              </MenuItem>
-                            ))}
+                            {glAccounts
+                              .filter(account => account.company_id === line.selectedCompany)
+                              .map((account) => (
+                                <MenuItem key={account.id} value={account.id}>
+                                  {account.account_code} - {account.description}
+                                </MenuItem>
+                              ))}
                           </Select>
                         </FormControl>
                       </Grid>
@@ -1972,7 +2041,7 @@ const CodeTransactions: React.FC = () => {
             onClick={handleSaveSplit}
             variant="contained"
             color="primary"
-            disabled={loading || (splitTransaction && Math.abs(splitLines.reduce((sum, line) => sum + line.amount, 0) - splitTransaction.amount) > 0.01)}
+            disabled={loading || (splitTransaction && Math.abs(splitLines.reduce((sum, line) => sum + line.amount, 0) - splitTransaction.amount) > 0.01) || false}
           >
             Save Split
           </Button>

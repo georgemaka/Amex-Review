@@ -3,10 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box, Paper, Typography, Grid, Button, Table, TableBody, 
   TableCell, TableContainer, TableHead, TableRow, LinearProgress,
-  Chip, IconButton, Tooltip, CircularProgress
+  Chip, IconButton, Tooltip, CircularProgress, TextField, InputAdornment,
+  TableSortLabel
 } from '@mui/material';
 import { 
-  Email, Download, Assignment, ArrowBack, GetApp, Archive, Description, TableChart 
+  Email, Download, Assignment, ArrowBack, GetApp, Archive, Description, TableChart,
+  Search 
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import api from '../../services/api';
@@ -56,6 +58,8 @@ const StatementDetail: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [sendingEmails, setSendingEmails] = useState(false);
   const [downloadingZip, setDownloadingZip] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
 
   useEffect(() => {
     if (id && !isNaN(parseInt(id))) {
@@ -270,6 +274,21 @@ const StatementDetail: React.FC = () => {
   const canExport = statement.status === 'completed';
   const showCodingButton = user?.role === 'coder' && ['distributed', 'in_progress'].includes(statement.status);
 
+  // Filter and sort cardholder progress
+  const filteredAndSortedProgress = progress?.cardholder_progress
+    .filter(cp => cp.cardholder_name.toLowerCase().includes(searchTerm.toLowerCase()))
+    .sort((a, b) => {
+      if (sortOrder === 'asc') {
+        return a.cardholder_name.localeCompare(b.cardholder_name);
+      } else {
+        return b.cardholder_name.localeCompare(a.cardholder_name);
+      }
+    }) || [];
+
+  const handleSort = () => {
+    setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+  };
+
   return (
     <Box>
       {/* Header */}
@@ -392,13 +411,39 @@ const StatementDetail: React.FC = () => {
         )}
       </Box>
 
+      {/* Search Bar */}
+      <Box sx={{ mb: 2 }}>
+        <TextField
+          placeholder="Search by cardholder name..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          size="small"
+          sx={{ width: 300 }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <Search />
+              </InputAdornment>
+            ),
+          }}
+        />
+      </Box>
+
       {/* Cardholder Progress Table */}
       <Paper>
         <TableContainer>
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell>Cardholder</TableCell>
+                <TableCell>
+                  <TableSortLabel
+                    active={true}
+                    direction={sortOrder}
+                    onClick={handleSort}
+                  >
+                    Cardholder
+                  </TableSortLabel>
+                </TableCell>
                 <TableCell align="center">Transactions</TableCell>
                 <TableCell align="center">Coded</TableCell>
                 <TableCell align="center">Reviewed</TableCell>
@@ -408,7 +453,7 @@ const StatementDetail: React.FC = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {progress.cardholder_progress.map((cp) => (
+              {filteredAndSortedProgress.map((cp) => (
                 <TableRow key={cp.cardholder_id}>
                   <TableCell>{cp.cardholder_name}</TableCell>
                   <TableCell align="center">{cp.total_transactions}</TableCell>
@@ -453,6 +498,15 @@ const StatementDetail: React.FC = () => {
                   </TableCell>
                 </TableRow>
               ))}
+              {filteredAndSortedProgress.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} align="center">
+                    <Typography color="text.secondary" sx={{ py: 2 }}>
+                      {searchTerm ? 'No cardholders found matching your search' : 'No cardholders found'}
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </TableContainer>
