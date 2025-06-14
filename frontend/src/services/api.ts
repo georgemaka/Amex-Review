@@ -193,6 +193,16 @@ class ApiService {
     return response.data;
   }
 
+  async getCardholdersWithCounts(params?: {
+    is_active?: boolean;
+    search?: string;
+    skip?: number;
+    limit?: number;
+  }) {
+    const response = await this.api.get('/cardholders/with-transaction-counts', { params });
+    return response.data;
+  }
+
   async getCardholder(id: number) {
     const response = await this.api.get(`/cardholders/${id}`);
     return response.data;

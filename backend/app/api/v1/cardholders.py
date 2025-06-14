@@ -1,7 +1,7 @@
-from typing import List, Any, Optional
+from typing import List, Any, Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, func, and_
 from sqlalchemy.orm import selectinload
 import openpyxl
 import io
@@ -9,7 +9,7 @@ import io
 from app.core.security import get_current_user, check_user_role
 from app.db.models import (
     User, UserRole, Cardholder, CardholderAssignment, 
-    CardholderReviewer
+    CardholderReviewer, CardholderStatement, Transaction
 )
 from app.db.schemas import (
     Cardholder as CardholderSchema,
@@ -57,6 +57,69 @@ async def list_cardholders(
     cardholders = result.scalars().all()
     
     return cardholders
+
+
+@router.get("/with-transaction-counts", response_model=List[Dict[str, Any]])
+async def list_cardholders_with_counts(
+    db: AsyncSession = Depends(get_async_db),
+    current_user: User = Depends(get_current_user),
+    is_active: Optional[bool] = None,
+    search: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100
+) -> Any:
+    """Get cardholders with their transaction counts."""
+    # Base query for cardholders
+    cardholder_query = select(Cardholder)
+    
+    # Filter by active status
+    if is_active is not None:
+        cardholder_query = cardholder_query.where(Cardholder.is_active == is_active)
+    
+    # Search by name
+    if search:
+        search_term = f"%{search}%"
+        cardholder_query = cardholder_query.where(
+            or_(
+                Cardholder.full_name.ilike(search_term),
+                Cardholder.first_name.ilike(search_term),
+                Cardholder.last_name.ilike(search_term),
+                Cardholder.employee_id.ilike(search_term)
+            )
+        )
+    
+    cardholder_query = cardholder_query.order_by(Cardholder.full_name).offset(skip).limit(limit)
+    cardholder_result = await db.execute(cardholder_query)
+    cardholders = cardholder_result.scalars().all()
+    
+    # Get transaction counts for each cardholder
+    result = []
+    for cardholder in cardholders:
+        # Count transactions through cardholder_statements
+        count_query = select(func.count(Transaction.id)).select_from(Transaction).join(
+            CardholderStatement,
+            Transaction.cardholder_statement_id == CardholderStatement.id
+        ).where(CardholderStatement.cardholder_id == cardholder.id)
+        
+        count_result = await db.execute(count_query)
+        transaction_count = count_result.scalar() or 0
+        
+        # Convert to dict and add count
+        cardholder_dict = {
+            "id": cardholder.id,
+            "full_name": cardholder.full_name,
+            "first_name": cardholder.first_name,
+            "last_name": cardholder.last_name,
+            "employee_id": cardholder.employee_id,
+            "card_number": cardholder.card_number,
+            "email": cardholder.email,
+            "department": cardholder.department,
+            "is_active": cardholder.is_active,
+            "transaction_count": transaction_count
+        }
+        result.append(cardholder_dict)
+    
+    return result
 
 
 @router.post("/", response_model=CardholderSchema)

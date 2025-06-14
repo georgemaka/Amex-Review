@@ -171,6 +171,11 @@ const CodeTransactions: React.FC = () => {
     loadReferenceData();
   }, []);
 
+  // Debug cardholders
+  useEffect(() => {
+    console.log('Cardholders state updated:', cardholders);
+  }, [cardholders]);
+
   // Load transactions when filters change
   useEffect(() => {
     loadTransactions();
@@ -258,7 +263,7 @@ const CodeTransactions: React.FC = () => {
         equipmentCostCodeRes,
         equipmentCostTypeRes,
       ] = await Promise.all([
-        api.getCardholders(),
+        api.getCardholders(), // Temporarily using regular endpoint to test
         api.getCompanies(),
         api.getJobs(),
         api.getJobCostTypes(),
@@ -267,6 +272,7 @@ const CodeTransactions: React.FC = () => {
         api.getEquipmentCostTypes(),
       ]);
 
+      console.log('Cardholder response:', cardholderRes);
       setCardholders(cardholderRes);
       setCompanies(companyRes);
       setJobs(jobRes);
@@ -274,8 +280,10 @@ const CodeTransactions: React.FC = () => {
       setEquipment(equipmentRes);
       setEquipmentCostCodes(equipmentCostCodeRes);
       setEquipmentCostTypes(equipmentCostTypeRes);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to load reference data:', err);
+      console.error('Error details:', err.response?.data || err.message);
+      setError('Failed to load dropdown data. Please refresh the page.');
     }
   };
 
@@ -825,6 +833,11 @@ const CodeTransactions: React.FC = () => {
               }}
               renderInput={(params) => (
                 <TextField {...params} label="Cardholder" placeholder="Type to search..." />
+              )}
+              renderOption={(props, option) => (
+                <Box component="li" {...props}>
+                  <Typography>{option.full_name}</Typography>
+                </Box>
               )}
               isOptionEqualToValue={(option, value) => option.id === value?.id}
             />
@@ -1422,11 +1435,20 @@ const CodeTransactions: React.FC = () => {
                   {sortedTransactions.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={8} align="center" sx={{ py: 4 }}>
-                        <Typography color="text.secondary">
-                          {searchTerm 
-                            ? `No transactions found matching "${searchTerm}"`
-                            : 'No transactions found'}
-                        </Typography>
+                        <Box>
+                          <Typography color="text.secondary" gutterBottom>
+                            {searchTerm 
+                              ? `No transactions found matching "${searchTerm}"`
+                              : selectedCardholder
+                                ? 'No transactions found for this cardholder'
+                                : 'No transactions found'}
+                          </Typography>
+                          {selectedCardholder && (
+                            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                              Please ensure statements have been uploaded for this cardholder.
+                            </Typography>
+                          )}
+                        </Box>
                       </TableCell>
                     </TableRow>
                   )}
