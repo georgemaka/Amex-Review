@@ -6,7 +6,7 @@ import {
   Tab,
   Typography,
 } from '@mui/material';
-import EmailClientManager from './EmailClientManager';
+import EmailServerManager from './EmailServerManager';
 import EmailTemplateManager from './EmailTemplateManager';
 
 interface TabPanelProps {
@@ -45,7 +45,7 @@ const EmailHub: React.FC = () => {
         
         <Box sx={{ p: 3 }}>
           <TabPanel value={tabValue} index={0}>
-            <EmailClientManager />
+            <EmailServerManager />
           </TabPanel>
           
           <TabPanel value={tabValue} index={1}>

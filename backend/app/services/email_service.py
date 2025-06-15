@@ -1,8 +1,14 @@
 import os
 import logging
-from typing import List, Dict, Optional, Union
+from typing import List, Dict, Optional, Union, Any
 from datetime import datetime, timedelta
 import platform
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
+from pathlib import Path
 
 # Conditional import for Windows
 if platform.system() == "Windows":
@@ -123,11 +129,49 @@ class EmailService:
                        subject: str,
                        body: str,
                        attachments: List[str]) -> bool:
-        """Send email using SMTP (fallback method)."""
-        # This would be implemented using smtplib
-        # For now, just logging
-        logger.info(f"SMTP email would be sent to {recipient}")
-        return True
+        """Send email using SMTP."""
+        try:
+            # Create message
+            msg = MIMEMultipart('alternative')
+            msg['From'] = f"AMEX Coding Portal <{settings.EMAIL_FROM_ADDRESS}>"
+            msg['To'] = recipient
+            msg['Subject'] = subject
+            msg['Reply-To'] = settings.EMAIL_REPLY_TO
+            
+            if cc_recipients:
+                msg['Cc'] = ', '.join(cc_recipients)
+            
+            # Create the HTML part
+            html_part = MIMEText(body, 'html')
+            msg.attach(html_part)
+            
+            # Add plain text version
+            plain_text = self._html_to_plain_text(body)
+            text_part = MIMEText(plain_text, 'plain')
+            msg.attach(text_part)
+            
+            # Add attachments
+            for attachment_path in attachments:
+                if os.path.exists(attachment_path):
+                    self._attach_file(msg, attachment_path)
+            
+            # Send email
+            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as server:
+                if settings.SMTP_USE_TLS:
+                    server.starttls()
+                if settings.SMTP_USER and settings.SMTP_PASSWORD:
+                    server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+                
+                # Get all recipients
+                all_recipients = [recipient] + cc_recipients
+                server.send_message(msg, to_addrs=all_recipients)
+            
+            logger.info(f"Email sent successfully to {recipient}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to send SMTP email: {str(e)}")
+            return False
     
     def _generate_coding_email_body(self, cardholder_names: List[str], deadline: str) -> str:
         """Generate HTML body for coding assignment email."""
@@ -315,6 +359,77 @@ class EmailService:
         </body>
         </html>
         """
+    
+    def _attach_file(self, msg: MIMEMultipart, file_path: str) -> None:
+        """Attach a file to the email message."""
+        try:
+            with open(file_path, 'rb') as file:
+                part = MIMEBase('application', 'octet-stream')
+                part.set_payload(file.read())
+                encoders.encode_base64(part)
+                part.add_header(
+                    'Content-Disposition',
+                    f'attachment; filename="{Path(file_path).name}"'
+                )
+                msg.attach(part)
+        except Exception as e:
+            logger.error(f"Failed to attach file {file_path}: {str(e)}")
+    
+    def _html_to_plain_text(self, html: str) -> str:
+        """Convert HTML to plain text (simple version)."""
+        # Remove HTML tags
+        import re
+        text = re.sub('<[^<]+?>', '', html)
+        # Replace common HTML entities
+        text = text.replace('&nbsp;', ' ')
+        text = text.replace('&lt;', '<')
+        text = text.replace('&gt;', '>')
+        text = text.replace('&amp;', '&')
+        text = text.replace('&quot;', '"')
+        text = text.replace('&apos;', "'")
+        # Clean up whitespace
+        text = re.sub(r'\s+', ' ', text)
+        return text.strip()
+    
+    async def send_email(self,
+                        to_email: str,
+                        subject: str,
+                        body: str,
+                        attachments: Optional[List[Dict[str, Any]]] = None,
+                        cc_emails: Optional[List[str]] = None,
+                        from_email: Optional[str] = None,
+                        from_name: Optional[str] = None,
+                        reply_to: Optional[str] = None) -> bool:
+        """Send email using configured method.
+        
+        Args:
+            to_email: Recipient email address
+            subject: Email subject
+            body: HTML body content
+            attachments: List of attachment dicts with 'path' and 'filename' keys
+            cc_emails: List of CC recipients
+            from_email: Override from email address
+            from_name: Display name for sender
+            reply_to: Reply-to email address
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        # Prepare attachment paths
+        attachment_paths = []
+        if attachments:
+            for attachment in attachments:
+                if 'path' in attachment and os.path.exists(attachment['path']):
+                    attachment_paths.append(attachment['path'])
+        
+        # Use SMTP by default (Outlook automation is Windows-specific)
+        return self._send_smtp_email(
+            recipient=to_email,
+            cc_recipients=cc_emails or [],
+            subject=subject,
+            body=body,
+            attachments=attachment_paths
+        )
     
     def _generate_ready_for_review_body(self, month: str, year: int, cardholder_count: int) -> str:
         """Generate email body for review ready notification."""

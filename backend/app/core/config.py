@@ -24,8 +24,11 @@ class Settings(BaseSettings):
     SMTP_PORT: int = 587
     SMTP_USER: str = "GL@sukut.com"
     SMTP_PASSWORD: str = ""
+    SMTP_USE_TLS: bool = True
     USE_OUTLOOK_AUTOMATION: bool = True
     EMAIL_FROM: str = "GL@sukut.com"
+    EMAIL_FROM_ADDRESS: str = "noreply@sukutapps.com"
+    EMAIL_REPLY_TO: str = "gl@sukut.com"
     
     # Microsoft Graph API
     AZURE_TENANT_ID: str = ""

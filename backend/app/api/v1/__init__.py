@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.v1 import auth, users, statements, transactions, cardholders, analytics, coding, admin, emails, email_client
+from app.api.v1 import auth, users, statements, transactions, cardholders, analytics, coding, admin, emails, email_client, email_sender
 
 api_router = APIRouter()
 
@@ -14,3 +14,4 @@ api_router.include_router(coding.router, prefix="/coding", tags=["coding"])
 api_router.include_router(admin.router, prefix="/admin", tags=["admin"])
 api_router.include_router(emails.router, prefix="/emails", tags=["emails"])
 api_router.include_router(email_client.router, prefix="/email-client", tags=["email-client"])
+api_router.include_router(email_sender.router, prefix="/email-sender", tags=["email-sender"])

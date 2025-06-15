@@ -6,6 +6,7 @@ import cardholderReducer from './slices/cardholderSlice';
 import uiReducer from './slices/uiSlice';
 import analyticsReducer from './slices/analyticsSlice';
 import budgetReducer from './slices/budgetSlice';
+import emailReducer from './slices/emailSlice';
 
 export const store = configureStore({
   reducer: {
@@ -16,6 +17,7 @@ export const store = configureStore({
     ui: uiReducer,
     analytics: analyticsReducer,
     budgets: budgetReducer,
+    emails: emailReducer,
   },
 });
 
