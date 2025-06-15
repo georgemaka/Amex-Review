@@ -100,7 +100,7 @@ const EmailManagement: React.FC = () => {
 
       const payload = {
         recipient_type: recipientType,
-        statement_id: selectedStatement,
+        statement_id: selectedStatement || undefined,
         subject,
         body,
         is_draft: isDraft,

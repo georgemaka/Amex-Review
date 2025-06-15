@@ -23,7 +23,7 @@ import {
   Notifications,
   Email,
   Assignment,
-  Template,
+  Article,
 } from '@mui/icons-material';
 import { RootState } from '../../store';
 
@@ -93,7 +93,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onDrawerToggle }) => {
     },
     {
       text: 'Email Templates',
-      icon: <Template />,
+      icon: <Article />,
       path: '/admin/email-templates',
       roles: ['admin'],
     },

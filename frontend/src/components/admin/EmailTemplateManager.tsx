@@ -175,17 +175,17 @@ const EmailTemplateManager: React.FC = () => {
   const extractVariables = (text: string): string[] => {
     const matches = text.match(/\{\{([^}]+)\}\}/g);
     if (!matches) return [];
-    return [...new Set(matches.map(match => match.slice(2, -2)))];
+    return Array.from(new Set(matches.map(match => match.slice(2, -2))));
   };
 
   const handleBodyChange = (value: string) => {
     setFormData(prev => ({
       ...prev,
       body: value,
-      variables: [...new Set([
+      variables: Array.from(new Set([
         ...extractVariables(prev.subject),
         ...extractVariables(value)
-      ])],
+      ])),
     }));
   };
 
@@ -193,10 +193,10 @@ const EmailTemplateManager: React.FC = () => {
     setFormData(prev => ({
       ...prev,
       subject: value,
-      variables: [...new Set([
+      variables: Array.from(new Set([
         ...extractVariables(value),
         ...extractVariables(prev.body)
-      ])],
+      ])),
     }));
   };
 
