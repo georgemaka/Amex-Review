@@ -32,6 +32,7 @@ import {
   Delete,
   PersonAdd,
   Assignment,
+  Notifications,
 } from '@mui/icons-material';
 import { Autocomplete } from '@mui/material';
 import { Formik, Form } from 'formik';
@@ -40,6 +41,7 @@ import { AppDispatch } from '../../store';
 import { addNotification } from '../../store/slices/uiSlice';
 import api from '../../services/api';
 import AssignmentManagement from './AssignmentManagement';
+import AlertSettings from './AlertSettings';
 
 interface User {
   id: number;
@@ -288,6 +290,7 @@ const UserManagement: React.FC = () => {
         >
           <Tab label="Users" />
           <Tab label="Assignments" icon={<Assignment />} iconPosition="start" />
+          <Tab label="Alert Settings" icon={<Notifications />} iconPosition="start" />
         </Tabs>
       </Paper>
 
@@ -380,6 +383,8 @@ const UserManagement: React.FC = () => {
       )}
 
       {activeTab === 1 && <AssignmentManagement />}
+      
+      {activeTab === 2 && <AlertSettings />}
 
       {/* User Dialog */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>

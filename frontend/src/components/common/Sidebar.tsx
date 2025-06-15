@@ -80,27 +80,9 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onDrawerToggle }) => {
       roles: ['admin'],
     },
     {
-      text: 'Assignments',
-      icon: <Assignment />,
-      path: '/admin/assignments',
-      roles: ['admin'],
-    },
-    {
       text: 'Email Management',
       icon: <Email />,
       path: '/admin/emails',
-      roles: ['admin'],
-    },
-    {
-      text: 'Email Templates',
-      icon: <Article />,
-      path: '/admin/email-templates',
-      roles: ['admin'],
-    },
-    {
-      text: 'Alert Settings',
-      icon: <Notifications />,
-      path: '/admin/alerts',
       roles: ['admin'],
     },
   ];

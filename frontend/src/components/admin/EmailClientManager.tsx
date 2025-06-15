@@ -234,10 +234,6 @@ const EmailClientManager: React.FC = () => {
 
   return (
     <Box>
-      <Typography variant="h5" gutterBottom>
-        Email Management
-      </Typography>
-
       <Alert severity="info" sx={{ mb: 3 }}>
         This tool helps you prepare emails in your default email client. Emails will be sent from your 
         personal email address on behalf of GL@sukut.com. For best results, add "on behalf of GL@sukut.com" 
