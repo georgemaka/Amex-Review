@@ -41,7 +41,7 @@ async def read_users(
             "role": user.role,
             "is_active": user.is_active,
             "is_superuser": user.is_superuser,
-            "last_login": user.last_login,
+            # "last_login": user.last_login,  # Comment out as field doesn't exist
             "created_at": user.created_at,
             "updated_at": user.updated_at,
             "assignment_count": 0

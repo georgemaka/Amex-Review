@@ -499,7 +499,7 @@ async def get_missing_cardholders(
     ).join(
         Statement, CardholderStatement.statement_id == Statement.id
     ).where(
-        CardholderStatement.cardholder_id == None
+        CardholderStatement.cardholder_id.is_(None)
     ).order_by(
         Statement.year.desc(),
         Statement.month.desc()

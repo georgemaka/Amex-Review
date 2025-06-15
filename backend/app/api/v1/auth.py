@@ -11,7 +11,7 @@ from app.core.security import (
     verify_password,
     get_current_user
 )
-from app.db.models import User, UserActivity
+from app.db.models import User
 from app.db.schemas import Token, User as UserSchema, UserWithToken
 from app.db.session import get_async_db
 
@@ -44,18 +44,18 @@ async def login(
         )
     
     # Update last login time
-    user.last_login = datetime.utcnow()
+    # user.last_login = datetime.utcnow()
     
-    # Create user activity log
-    activity = UserActivity(
-        user_id=user.id,
-        activity_type="login",
-        description=f"User logged in",
-        ip_address=request.client.host if request else None,
-        user_agent=request.headers.get("user-agent", "")[:500] if request else None,
-        activity_metadata={"email": user.email}
-    )
-    db.add(activity)
+    # Create user activity log - commented out as UserActivity model doesn't exist
+    # activity = UserActivity(
+    #     user_id=user.id,
+    #     activity_type="login",
+    #     description=f"User logged in",
+    #     ip_address=request.client.host if request else None,
+    #     user_agent=request.headers.get("user-agent", "")[:500] if request else None,
+    #     activity_metadata={"email": user.email}
+    # )
+    # db.add(activity)
     await db.commit()
     await db.refresh(user)
     

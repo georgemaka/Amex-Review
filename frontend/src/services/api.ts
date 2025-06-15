@@ -18,9 +18,12 @@ class ApiService {
     // Request interceptor to add auth token
     this.api.interceptors.request.use(
       (config) => {
-        const token = this.tokenGetter?.();
-        if (token) {
-          config.headers.Authorization = `Bearer ${token}`;
+        // Don't add auth header for login endpoint
+        if (!config.url?.includes('/auth/login')) {
+          const token = this.tokenGetter?.();
+          if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+          }
         }
         return config;
       },
@@ -47,14 +50,26 @@ class ApiService {
 
   // Auth endpoints
   async login(email: string, password: string) {
-    const formData = new FormData();
-    formData.append('username', email);
-    formData.append('password', password);
+    const params = new URLSearchParams();
+    params.append('username', email);
+    params.append('password', password);
     
-    const response = await this.api.post('/auth/login', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
-    return response.data;
+    console.log('Login attempt:', { email, paramsString: params.toString() });
+    
+    // Clear any existing token to ensure clean login
+    localStorage.removeItem('token');
+    
+    try {
+      const response = await this.api.post('/auth/login', params, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      });
+      console.log('Login successful:', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('Login error:', error.response?.data || error.message);
+      console.error('Full error:', error.response);
+      throw error;
+    }
   }
 
   async refreshToken() {
