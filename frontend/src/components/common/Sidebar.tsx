@@ -11,6 +11,7 @@ import {
   Divider,
   Toolbar,
   Box,
+  Typography,
 } from '@mui/material';
 import {
   Dashboard,
@@ -32,7 +33,7 @@ interface SidebarProps {
   onDrawerToggle: () => void;
 }
 
-const drawerWidth = 200;
+const drawerWidth = 240;
 
 const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onDrawerToggle }) => {
   const navigate = useNavigate();
@@ -96,9 +97,9 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onDrawerToggle }) => {
   };
 
   const drawer = (
-    <div>
+    <Box sx={{ height: '100%', backgroundColor: 'grey.50' }}>
       <Toolbar />
-      <Box sx={{ overflow: 'auto' }}>
+      <Box sx={{ overflow: 'auto', py: 1 }}>
         <List>
           {menuItems.map((item) => {
             if (!canAccess(item.roles)) return null;
@@ -108,9 +109,36 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onDrawerToggle }) => {
                 <ListItemButton
                   onClick={() => navigate(item.path)}
                   selected={isActive(item.path)}
+                  sx={{
+                    mx: 1,
+                    my: 0.5,
+                    borderRadius: 1,
+                    '&.Mui-selected': {
+                      backgroundColor: 'primary.main',
+                      color: 'primary.contrastText',
+                      '&:hover': {
+                        backgroundColor: 'primary.dark',
+                      },
+                      '& .MuiListItemIcon-root': {
+                        color: 'primary.contrastText',
+                      },
+                    },
+                    '&:hover': {
+                      backgroundColor: 'action.hover',
+                    },
+                  }}
                 >
-                  <ListItemIcon>{item.icon}</ListItemIcon>
-                  <ListItemText primary={item.text} />
+                  <ListItemIcon sx={{ 
+                    minWidth: 40,
+                    color: isActive(item.path) ? 'inherit' : 'action.active',
+                  }}>{item.icon}</ListItemIcon>
+                  <ListItemText 
+                    primary={item.text}
+                    primaryTypographyProps={{
+                      fontSize: '0.875rem',
+                      fontWeight: isActive(item.path) ? 600 : 400,
+                    }}
+                  />
                 </ListItemButton>
               </ListItem>
             );
@@ -119,25 +147,62 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onDrawerToggle }) => {
         
         {user?.role === 'admin' && (
           <>
-            <Divider />
-            <List>
-              <ListItem>
-                <ListItemIcon>
-                  <AdminPanelSettings />
-                </ListItemIcon>
-                <ListItemText primary="Administration" />
-              </ListItem>
+            <Divider sx={{ my: 1 }} />
+            <Box sx={{ px: 2, py: 1.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <AdminPanelSettings sx={{ fontSize: 18, mr: 1, color: 'text.secondary' }} />
+                <Typography 
+                  variant="overline" 
+                  sx={{ 
+                    fontWeight: 600,
+                    color: 'text.secondary',
+                    letterSpacing: 1.2,
+                    fontSize: '0.7rem'
+                  }}
+                >
+                  Administration
+                </Typography>
+              </Box>
+            </Box>
+            <List sx={{ pt: 0 }}>
               {adminMenuItems.map((item) => {
                 if (!canAccess(item.roles)) return null;
                 
                 return (
-                  <ListItem key={item.text} disablePadding sx={{ pl: 2 }}>
+                  <ListItem key={item.text} disablePadding>
                     <ListItemButton
                       onClick={() => navigate(item.path)}
                       selected={isActive(item.path)}
+                      sx={{
+                        mx: 1,
+                        my: 0.5,
+                        borderRadius: 1,
+                        '&.Mui-selected': {
+                          backgroundColor: 'primary.main',
+                          color: 'primary.contrastText',
+                          '&:hover': {
+                            backgroundColor: 'primary.dark',
+                          },
+                          '& .MuiListItemIcon-root': {
+                            color: 'primary.contrastText',
+                          },
+                        },
+                        '&:hover': {
+                          backgroundColor: 'action.hover',
+                        },
+                      }}
                     >
-                      <ListItemIcon>{item.icon}</ListItemIcon>
-                      <ListItemText primary={item.text} />
+                      <ListItemIcon sx={{ 
+                    minWidth: 40,
+                    color: isActive(item.path) ? 'inherit' : 'action.active',
+                  }}>{item.icon}</ListItemIcon>
+                      <ListItemText 
+                        primary={item.text} 
+                        primaryTypographyProps={{
+                          fontSize: '0.875rem',
+                          fontWeight: isActive(item.path) ? 600 : 400,
+                        }}
+                      />
                     </ListItemButton>
                   </ListItem>
                 );
@@ -146,7 +211,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onDrawerToggle }) => {
           </>
         )}
       </Box>
-    </div>
+    </Box>
   );
 
   return (
