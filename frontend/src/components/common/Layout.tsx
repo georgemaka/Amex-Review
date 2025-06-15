@@ -21,11 +21,10 @@ const Layout: React.FC = () => {
         component="main"
         sx={{
           flexGrow: 1,
-          p: 3,
-          width: { sm: `calc(100% - ${drawerWidth}px)` },
-          ml: { sm: `${drawerWidth}px` },
+          p: { xs: 1, sm: 2 },
           mt: '64px',
           backgroundColor: 'background.default',
+          overflow: 'auto',
         }}
       >
         <Outlet />
