@@ -85,24 +85,25 @@ black app/  # Format code
 **Note**: If you encounter port conflicts, update the ports in docker-compose.yml (e.g., postgres: 5434:5432)
 
 ### Backend Structure
-- `app/api/v1/`: REST API endpoints (auth, users, statements, transactions, cardholders, analytics)
-- `app/core/`: Core configuration, security (JWT auth), Celery setup
+- `app/api/v1/`: REST API endpoints (auth, users, statements, transactions, cardholders, analytics, email_sender)
+- `app/core/`: Core configuration, security (JWT auth), Celery setup, email settings
 - `app/db/`: SQLAlchemy models and Pydantic schemas (including analytics models)
-- `app/services/`: Business logic - PDF processing, Excel processing, email service, analytics processor
+- `app/services/`: Business logic - PDF processing, Excel processing, email service (SMTP), analytics processor
 - `app/tasks/`: Celery task definitions for async operations including analytics processing
 
 ### Frontend Structure
 - `src/components/`: Feature-based component organization (auth, admin, coding, dashboard, analytics)
-- `src/store/`: Redux Toolkit store with slices for each domain (including analytics and budgets)
-- `src/services/api.ts`: Axios API client with auth interceptors and analytics endpoints
+- `src/store/`: Redux Toolkit store with slices for each domain (including analytics, budgets, and emails)
+- `src/services/api.ts`: Axios API client with auth interceptors, analytics endpoints, and email endpoints
 - Split-screen coding interface: PDFViewer + TransactionCodingForm components
 - Analytics dashboard with interactive charts using Recharts library
+- Email management: EmailHub combines EmailServerManager + EmailTemplateManager
 
 ### Key Workflows
 
 1. **Statement Processing**: Upload PDF/Excel → Celery processes → Splits by cardholder → Auto-categorizes transactions → Calculates analytics → Stores in DB
 2. **Transaction Coding**: Load statement → Display PDF + transactions → Code each transaction → Save to DB
-3. **Email Distribution**: Admin triggers → Celery sends emails with attachments via SMTP/Outlook
+3. **Email Distribution**: Admin composes email → Select recipients (all coders/reviewers/specific) → Attach PDFs/CSVs → Send via SMTP from noreply@sukutapps.com
 4. **Analytics Processing**: Transactions auto-categorized → Spending metrics calculated → Anomalies detected → Budgets monitored
 5. **Multiple Statements**: Support for 2-3 PDFs per month/year period with different filenames
 6. **Statement Management**: View statements → Download PDFs/CSVs (individual or bulk) → Delete statements with cascade deletion
@@ -118,6 +119,8 @@ black app/  # Format code
 - SpendingAnalytics (pre-computed analytics data)
 - BudgetLimit (spending limits by category/cardholder)
 - SpendingAlert (anomaly and budget alerts)
+- EmailTemplate (reusable email templates with variables)
+- EmailLog (tracks sent emails and their status)
 
 ### Authentication
 JWT-based authentication with role-based access control. Token stored in localStorage, included in API requests via Axios interceptor.
@@ -176,6 +179,15 @@ JWT-based authentication with role-based access control. Token stored in localSt
 - `GET /api/v1/statements/{id}/download-all-csvs` - Download all CSVs as ZIP
 - `GET /api/v1/statements/{id}/download-all` - Download all files as ZIP
 
+#### Email
+- `POST /api/v1/email-sender/send` - Send emails with attachments
+- `POST /api/v1/email-sender/test` - Send test email
+- `GET /api/v1/email-sender/history` - Get email sending history
+- `GET /api/v1/emails/templates` - List email templates
+- `POST /api/v1/emails/templates` - Create email template
+- `PUT /api/v1/emails/templates/{id}` - Update email template
+- `DELETE /api/v1/emails/templates/{id}` - Delete email template
+
 ### Frontend Components
 
 #### Analytics Components
@@ -192,6 +204,11 @@ JWT-based authentication with role-based access control. Token stored in localSt
 - `StatementList` - Main statements table with actions
 - `StatementUpload` - Form for uploading PDF/Excel files
 - `StatementDetail` - View cardholder splits with download options
+
+#### Email Components
+- `EmailHub` - Container for email functionality tabs
+- `EmailServerManager` - Server-side email composition and sending
+- `EmailTemplateManager` - Create and manage reusable email templates
 
 ## Common Issues & Solutions
 
@@ -231,3 +248,24 @@ If PDF splitting fails:
 1. Check cardholder pattern in `pdf_processor.py`
 2. Verify PDF format matches expected patterns
 3. Look for "Total for NAME" patterns in your PDFs
+
+### Email Configuration
+To enable email sending:
+1. Set SMTP credentials in environment variables or .env file:
+   ```
+   SMTP_HOST=smtp.office365.com  # or your SMTP server
+   SMTP_PORT=587
+   SMTP_USER=your-email@domain.com
+   SMTP_PASSWORD=your-password
+   SMTP_USE_TLS=true
+   EMAIL_FROM_ADDRESS=noreply@sukutapps.com
+   EMAIL_REPLY_TO=gl@sukut.com
+   ```
+2. Email features:
+   - Send from noreply@sukutapps.com with Reply-To header
+   - Attach PDFs/CSVs from statements
+   - Use email templates with variables ({{month}}, {{year}}, {{deadline}}, {{portal_url}})
+   - Track email history and status
+3. Test email configuration:
+   - Use the test email button in Email Management
+   - Check `docker compose logs backend` for SMTP errors
