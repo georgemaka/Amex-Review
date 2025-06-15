@@ -1,0 +1,62 @@
+{
+  "family": "amex-celery",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::322325783793:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::322325783793:role/ecsTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "celery",
+      "image": "322325783793.dkr.ecr.us-east-1.amazonaws.com/amex-review/backend:latest",
+      "command": ["celery", "-A", "app.core.celery_app", "worker", "--loglevel=info"],
+      "environment": [
+        {"name": "ENVIRONMENT", "value": "production"},
+        {"name": "AWS_REGION", "value": "us-east-1"},
+        {"name": "UPLOAD_DIR", "value": "/app/uploads"}
+      ],
+      "secrets": [
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:322325783793:secret:amex/database-url"
+        },
+        {
+          "name": "REDIS_URL",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:322325783793:secret:amex/redis-url"
+        },
+        {
+          "name": "SECRET_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:322325783793:secret:amex/secret-key"
+        }
+      ],
+      "mountPoints": [
+        {
+          "sourceVolume": "efs-storage",
+          "containerPath": "/app/uploads"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/amex-review/celery",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ],
+  "volumes": [
+    {
+      "name": "efs-storage",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "fs-xxxxxxxxx",
+        "transitEncryption": "ENABLED",
+        "authorizationConfig": {
+          "iam": "ENABLED"
+        }
+      }
+    }
+  ]
+}

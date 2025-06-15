@@ -1,0 +1,143 @@
+name: Deploy to AWS ECS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY_BACKEND: amex-review/backend
+  ECR_REPOSITORY_FRONTEND: amex-review/frontend
+  ECS_CLUSTER: amex-review-cluster
+  ECS_SERVICE_BACKEND: backend
+  ECS_SERVICE_FRONTEND: frontend
+  ECS_SERVICE_CELERY: celery-worker
+
+jobs:
+  deploy:
+    name: Deploy to ECS
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag, and push backend image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd backend
+          if [ -f Dockerfile.production ]; then
+            docker build -f Dockerfile.production -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG .
+          else
+            docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG .
+          fi
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:latest
+
+      - name: Build, tag, and push frontend image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+          REACT_APP_API_URL: https://amex.sukutapps.com
+        run: |
+          cd frontend
+          if [ -f Dockerfile.production ]; then
+            docker build -f Dockerfile.production \
+              --build-arg REACT_APP_API_URL=$REACT_APP_API_URL \
+              -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG .
+          else
+            docker build \
+              --build-arg REACT_APP_API_URL=$REACT_APP_API_URL \
+              -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG .
+          fi
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:latest
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:latest
+
+      - name: Update ECS services
+        run: |
+          # Update backend service
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE_BACKEND }} \
+            --force-new-deployment \
+            --query 'service.serviceName' \
+            --output text
+          
+          # Update frontend service
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE_FRONTEND }} \
+            --force-new-deployment \
+            --query 'service.serviceName' \
+            --output text
+          
+          # Update celery worker
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE_CELERY }} \
+            --force-new-deployment \
+            --query 'service.serviceName' \
+            --output text
+
+      - name: Wait for services to stabilize
+        run: |
+          echo "Waiting for backend service to stabilize..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE_BACKEND }}
+          
+          echo "Waiting for frontend service to stabilize..."
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE_FRONTEND }}
+          
+          echo "All services deployed successfully!"
+
+      - name: Run database migrations
+        continue-on-error: true
+        run: |
+          # Get the latest backend task
+          TASK_ARN=$(aws ecs list-tasks \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service-name ${{ env.ECS_SERVICE_BACKEND }} \
+            --query "taskArns[0]" \
+            --output text)
+          
+          if [ "$TASK_ARN" != "None" ] && [ ! -z "$TASK_ARN" ]; then
+            echo "Running database migrations on task: $TASK_ARN"
+            
+            # Note: This requires ECS Exec to be enabled
+            aws ecs execute-command \
+              --cluster ${{ env.ECS_CLUSTER }} \
+              --task $TASK_ARN \
+              --container backend \
+              --command "alembic upgrade head" \
+              --interactive || echo "ECS Exec not enabled or migration already applied"
+          fi
+
+      - name: Deployment Summary
+        run: |
+          echo "🚀 Deployment completed!"
+          echo "Frontend: https://amex.sukutapps.com"
+          echo "API: https://amex.sukutapps.com/api/v1/docs"
+          echo ""
+          echo "View logs:"
+          echo "- Backend: aws logs tail /ecs/amex-review/backend --follow"
+          echo "- Frontend: aws logs tail /ecs/amex-review/frontend --follow"

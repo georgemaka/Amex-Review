@@ -1,0 +1,46 @@
+{
+  "family": "amex-flower",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::322325783793:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "flower",
+      "image": "322325783793.dkr.ecr.us-east-1.amazonaws.com/amex-review/backend:latest",
+      "command": ["celery", "-A", "app.core.celery_app", "flower", "--port=5555"],
+      "portMappings": [
+        {
+          "containerPort": 5555,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {"name": "ENVIRONMENT", "value": "production"}
+      ],
+      "secrets": [
+        {
+          "name": "REDIS_URL",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:322325783793:secret:amex/redis-url"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/amex-review/flower",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs",
+          "awslogs-create-group": "true"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:5555/ || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 30
+      }
+    }
+  ]
+}

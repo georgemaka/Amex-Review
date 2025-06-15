@@ -55,4 +55,37 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "ok"}
+    """Health check endpoint for ALB."""
+    # Basic health check - just verify the app is running
+    return {"status": "healthy", "service": "backend"}
+
+
+@app.get("/health/detailed")
+async def detailed_health_check():
+    """Detailed health check including database and redis connectivity."""
+    health_status = {
+        "status": "healthy",
+        "service": "backend",
+        "version": settings.VERSION,
+        "checks": {}
+    }
+    
+    # Check database connectivity
+    try:
+        from sqlalchemy import text
+        async with async_engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        health_status["checks"]["database"] = "healthy"
+    except Exception as e:
+        health_status["status"] = "unhealthy"
+        health_status["checks"]["database"] = f"unhealthy: {str(e)}"
+    
+    # Check Redis connectivity
+    try:
+        from app.core.celery_app import celery_app
+        celery_app.backend.get("health_check_test")
+        health_status["checks"]["redis"] = "healthy"
+    except Exception as e:
+        health_status["checks"]["redis"] = f"warning: {str(e)}"
+    
+    return health_status

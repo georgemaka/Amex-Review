@@ -28,7 +28,8 @@
       "Bash(pkill:*)",
       "Bash(make:*)",
       "Bash(npm run type-check:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(chmod:*)"
     ],
     "deny": []
   }
