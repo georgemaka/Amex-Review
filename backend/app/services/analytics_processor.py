@@ -11,6 +11,13 @@ from app.db.models import (
     Transaction, SpendingCategory, MerchantMapping, SpendingAnalytics,
     SpendingAlert, BudgetLimit, CardholderStatement, Cardholder
 )
+from app.core.alert_config import (
+    LARGE_TRANSACTION_THRESHOLD,
+    WEEKEND_TRANSACTION_ENABLED,
+    UNUSUAL_SPENDING_INCREASE_PERCENT,
+    DUPLICATE_DETECTION_ENABLED,
+    ALERT_TYPES
+)
 
 logger = logging.getLogger(__name__)
 
@@ -198,8 +205,9 @@ class AnalyticsProcessor:
             )
             historical_avg = hist_result.scalar() or analytics.total_amount
             
-            # Check for unusual spending (>50% increase)
-            if analytics.total_amount > historical_avg * 1.5:
+            # Check for unusual spending
+            threshold_multiplier = 1 + (UNUSUAL_SPENDING_INCREASE_PERCENT / 100)
+            if analytics.total_amount > historical_avg * threshold_multiplier:
                 alert = SpendingAlert(
                     alert_type="unusual_spending",
                     severity="warning",
@@ -263,6 +271,84 @@ class AnalyticsProcessor:
                     )
                     alerts.append(alert)
                     self.db.add(alert)
+        
+        await self.db.commit()
+        return alerts
+    
+    async def generate_transaction_alerts(self, statement_id: int):
+        """Generate alerts for individual transactions based on patterns."""
+        # Get all transactions for the statement
+        result = await self.db.execute(
+            select(Transaction)
+            .join(CardholderStatement)
+            .where(CardholderStatement.statement_id == statement_id)
+            .options(
+                selectinload(Transaction.cardholder_statement).selectinload(CardholderStatement.cardholder),
+                selectinload(Transaction.category)
+            )
+        )
+        transactions = result.scalars().all()
+        
+        alerts = []
+        
+        for transaction in transactions:
+            # Check for large transactions
+            if ALERT_TYPES['large_transaction']['enabled'] and transaction.amount > LARGE_TRANSACTION_THRESHOLD:
+                alert = SpendingAlert(
+                    alert_type="large_transaction",
+                    severity=ALERT_TYPES['large_transaction']['severity'],
+                    cardholder_id=transaction.cardholder_statement.cardholder_id,
+                    category_id=transaction.category_id,
+                    transaction_id=transaction.id,
+                    amount=transaction.amount,
+                    threshold=LARGE_TRANSACTION_THRESHOLD,
+                    description=f"Large transaction of ${transaction.amount:.2f} at {transaction.merchant_name}"
+                )
+                alerts.append(alert)
+                self.db.add(alert)
+            
+            # Check for weekend transactions
+            if WEEKEND_TRANSACTION_ENABLED and transaction.transaction_date.weekday() >= 5:  # Saturday or Sunday
+                alert = SpendingAlert(
+                    alert_type="weekend_transaction",
+                    severity="info",
+                    cardholder_id=transaction.cardholder_statement.cardholder_id,
+                    category_id=transaction.category_id,
+                    transaction_id=transaction.id,
+                    amount=transaction.amount,
+                    description=f"Weekend transaction on {transaction.transaction_date.strftime('%A')}"
+                )
+                alerts.append(alert)
+                self.db.add(alert)
+            
+            # Check for duplicate transactions (same amount and merchant on same day)
+            duplicate_result = await self.db.execute(
+                select(Transaction)
+                .join(CardholderStatement)
+                .where(
+                    and_(
+                        CardholderStatement.cardholder_id == transaction.cardholder_statement.cardholder_id,
+                        Transaction.id != transaction.id,
+                        Transaction.merchant_name == transaction.merchant_name,
+                        Transaction.amount == transaction.amount,
+                        func.date(Transaction.transaction_date) == transaction.transaction_date.date()
+                    )
+                )
+            )
+            duplicates = duplicate_result.scalars().all()
+            
+            if duplicates:
+                alert = SpendingAlert(
+                    alert_type="potential_duplicate",
+                    severity="warning",
+                    cardholder_id=transaction.cardholder_statement.cardholder_id,
+                    category_id=transaction.category_id,
+                    transaction_id=transaction.id,
+                    amount=transaction.amount,
+                    description=f"Potential duplicate transaction: ${transaction.amount:.2f} at {transaction.merchant_name}"
+                )
+                alerts.append(alert)
+                self.db.add(alert)
         
         await self.db.commit()
         return alerts
@@ -372,6 +458,11 @@ class AnalyticsProcessor:
             logger.info("Detecting spending anomalies")
             alerts = await self.detect_anomalies(statement_id)
             logger.info(f"Created {len(alerts)} alerts")
+            
+            # Generate alerts for transactions
+            logger.info("Generating transaction-based alerts")
+            transaction_alerts = await self.generate_transaction_alerts(statement_id)
+            logger.info(f"Created {len(transaction_alerts)} transaction alerts")
             
             return True
             
@@ -497,6 +588,101 @@ def process_statement_analytics_sync(db, statement_id: int):
         
         db.commit()
         logger.info(f"Analytics calculation completed for statement {statement_id}")
+        
+        # Generate alerts for transactions
+        logger.info("Generating transaction-based alerts")
+        alert_count = 0
+        
+        # Get all transactions for alert generation
+        transactions = db.query(Transaction)\
+            .join(CardholderStatement)\
+            .filter(CardholderStatement.statement_id == statement_id)\
+            .all()
+        
+        for transaction in transactions:
+            # Check for large transactions
+            if ALERT_TYPES['large_transaction']['enabled'] and transaction.amount > LARGE_TRANSACTION_THRESHOLD:
+                alert = SpendingAlert(
+                    alert_type="large_transaction",
+                    severity=ALERT_TYPES['large_transaction']['severity'],
+                    cardholder_id=transaction.cardholder_statement.cardholder_id,
+                    category_id=transaction.category_id,
+                    transaction_id=transaction.id,
+                    amount=transaction.amount,
+                    threshold=LARGE_TRANSACTION_THRESHOLD,
+                    description=f"Large transaction of ${transaction.amount:.2f} at {transaction.merchant_name}"
+                )
+                db.add(alert)
+                alert_count += 1
+            
+            # Check for weekend transactions
+            if WEEKEND_TRANSACTION_ENABLED and transaction.transaction_date.weekday() >= 5:  # Saturday or Sunday
+                alert = SpendingAlert(
+                    alert_type="weekend_transaction",
+                    severity="info",
+                    cardholder_id=transaction.cardholder_statement.cardholder_id,
+                    category_id=transaction.category_id,
+                    transaction_id=transaction.id,
+                    amount=transaction.amount,
+                    description=f"Weekend transaction on {transaction.transaction_date.strftime('%A')}"
+                )
+                db.add(alert)
+                alert_count += 1
+        
+        # Check budget limits
+        budget_limits = db.query(BudgetLimit).filter(BudgetLimit.is_active == True).all()
+        
+        for budget in budget_limits:
+            # Calculate spending for this budget's criteria
+            query = db.query(func.sum(Transaction.amount)).join(CardholderStatement)
+            
+            if budget.cardholder_id:
+                query = query.filter(CardholderStatement.cardholder_id == budget.cardholder_id)
+            
+            if budget.category_id:
+                query = query.filter(Transaction.category_id == budget.category_id)
+            
+            if budget.month and budget.year:
+                query = query.filter(
+                    func.extract('month', Transaction.transaction_date) == budget.month,
+                    func.extract('year', Transaction.transaction_date) == budget.year
+                )
+            else:
+                # Use current statement's month/year
+                query = query.filter(
+                    func.extract('month', Transaction.transaction_date) == month,
+                    func.extract('year', Transaction.transaction_date) == year
+                )
+            
+            total_spending = query.scalar() or 0
+            
+            if total_spending > budget.limit_amount:
+                alert = SpendingAlert(
+                    alert_type="budget_exceeded",
+                    severity="critical",
+                    cardholder_id=budget.cardholder_id,
+                    category_id=budget.category_id,
+                    amount=total_spending,
+                    threshold=budget.limit_amount,
+                    description=f"Budget limit exceeded by ${total_spending - budget.limit_amount:.2f}"
+                )
+                db.add(alert)
+                alert_count += 1
+            elif total_spending > budget.limit_amount * budget.alert_threshold:
+                alert = SpendingAlert(
+                    alert_type="budget_warning",
+                    severity="warning",
+                    cardholder_id=budget.cardholder_id,
+                    category_id=budget.category_id,
+                    amount=total_spending,
+                    threshold=budget.limit_amount * budget.alert_threshold,
+                    description=f"Spending at {(total_spending / budget.limit_amount * 100):.0f}% of budget"
+                )
+                db.add(alert)
+                alert_count += 1
+        
+        db.commit()
+        logger.info(f"Generated {alert_count} alerts for statement {statement_id}")
         
     except Exception as e:
         logger.error(f"Error in sync analytics processing: {str(e)}")

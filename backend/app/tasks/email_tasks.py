@@ -206,3 +206,34 @@ def send_review_requests_task(statement_id: int) -> Dict:
     
     finally:
         db.close()
+
+
+@celery_app.task(name="send_group_notification")
+def send_group_notification_task(
+    recipients: List[str],
+    subject: str,
+    body: str,
+    attachments: List[str] = None
+) -> Dict:
+    """Send notification to a group of recipients."""
+    email_service = EmailService()
+    
+    try:
+        result = email_service.send_group_notification(
+            recipients=recipients,
+            subject=subject,
+            body=body,
+            attachments=attachments or [],
+            is_draft=False  # Send directly when using background task
+        )
+        
+        logger.info(f"Group notification sent to {len(recipients)} recipients")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Failed to send group notification: {str(e)}")
+        return {
+            "successful": [],
+            "failed": [{"recipient": r, "error": str(e)} for r in recipients],
+            "drafts": []
+        }

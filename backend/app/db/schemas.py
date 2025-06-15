@@ -86,8 +86,10 @@ class CardholderAssignmentBase(BaseModel):
     is_active: bool = True
 
 
-class CardholderAssignmentCreate(CardholderAssignmentBase):
-    pass
+class CardholderAssignmentCreate(BaseModel):
+    coder_id: int
+    cc_emails: List[str] = []
+    is_active: bool = True
 
 
 class CardholderAssignment(CardholderAssignmentBase):
@@ -107,8 +109,10 @@ class CardholderReviewerBase(BaseModel):
     is_active: bool = True
 
 
-class CardholderReviewerCreate(CardholderReviewerBase):
-    pass
+class CardholderReviewerCreate(BaseModel):
+    reviewer_id: int
+    review_order: int = 1
+    is_active: bool = True
 
 
 class CardholderReviewer(CardholderReviewerBase):
@@ -660,3 +664,36 @@ class AnalyticsDashboard(BaseModel):
     spending_trend: List[SpendingTrend]
     recent_alerts: List[SpendingAlert]
     period_comparison: dict  # Current vs previous period
+
+
+# Email Template Schemas
+class EmailTemplateBase(BaseModel):
+    name: str
+    subject: str
+    body: str
+    category: str
+    variables: List[str] = []
+    is_active: bool = True
+
+
+class EmailTemplateCreate(EmailTemplateBase):
+    pass
+
+
+class EmailTemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    subject: Optional[str] = None
+    body: Optional[str] = None
+    category: Optional[str] = None
+    variables: Optional[List[str]] = None
+    is_active: Optional[bool] = None
+
+
+class EmailTemplate(EmailTemplateBase):
+    id: int
+    created_by_id: Optional[int]
+    created_at: datetime
+    updated_at: Optional[datetime]
+    
+    class Config:
+        from_attributes = True

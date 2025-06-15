@@ -59,6 +59,7 @@ const RecentStatements: React.FC<RecentStatementsProps> = ({ statements }) => {
       <Table>
         <TableHead>
           <TableRow>
+            <TableCell>Statement Name</TableCell>
             <TableCell>Period</TableCell>
             <TableCell>Closing Date</TableCell>
             <TableCell>Status</TableCell>
@@ -71,7 +72,22 @@ const RecentStatements: React.FC<RecentStatementsProps> = ({ statements }) => {
           {statements.map((statement) => (
             <TableRow key={statement.id} hover>
               <TableCell>
-                {statement.month}/{statement.year}
+                <Tooltip title={statement.pdf_filename || statement.excel_filename}>
+                  <Typography 
+                    variant="body2" 
+                    sx={{ 
+                      maxWidth: 200, 
+                      overflow: 'hidden', 
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap' 
+                    }}
+                  >
+                    {statement.pdf_filename || statement.excel_filename || 'N/A'}
+                  </Typography>
+                </Tooltip>
+              </TableCell>
+              <TableCell>
+                {format(new Date(statement.year, statement.month - 1), 'MMMM yyyy')}
               </TableCell>
               <TableCell>
                 {format(new Date(statement.closing_date), 'MMM dd, yyyy')}

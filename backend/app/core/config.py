@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     USE_OUTLOOK_AUTOMATION: bool = True
     EMAIL_FROM: str = "GL@sukut.com"
     
+    # Microsoft Graph API
+    AZURE_TENANT_ID: str = ""
+    AZURE_CLIENT_ID: str = ""
+    AZURE_CLIENT_SECRET: str = ""
+    USE_GRAPH_API: bool = True  # Use Graph API if credentials are provided
+    
     # File Upload
     UPLOAD_DIR: str = "/app/uploads"
     MAX_UPLOAD_SIZE: int = 104857600  # 100MB
@@ -41,6 +47,9 @@ class Settings(BaseSettings):
     
     # CORS
     BACKEND_CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:3001", "http://localhost:8000"]
+    
+    # Frontend URL
+    FRONTEND_URL: str = "http://sukutapps.com"
     
     # Development
     DEBUG: bool = False

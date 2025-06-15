@@ -16,6 +16,10 @@ import CodeTransactionsDebug from './components/coding/CodeTransactionsDebug';
 // import CodeTransactionsSimple from './components/coding/CodeTransactionsSimple';
 import UserManagement from './components/admin/UserManagement';
 import CardholderManagement from './components/admin/CardholderManagement';
+import AlertSettings from './components/admin/AlertSettings';
+import EmailClientManager from './components/admin/EmailClientManager';
+import EmailTemplateManager from './components/admin/EmailTemplateManager';
+import AssignmentManagement from './components/admin/AssignmentManagement';
 import NotificationSnackbar from './components/common/NotificationSnackbar';
 import AnalyticsDashboard from './components/analytics/AnalyticsDashboard';
 import ErrorBoundary from './components/common/ErrorBoundary';
@@ -60,6 +64,10 @@ function App() {
             <Route path="/analytics" element={<AnalyticsDashboard />} />
             <Route path="/admin/users" element={<UserManagement />} />
             <Route path="/admin/cardholders" element={<CardholderManagement />} />
+            <Route path="/admin/assignments" element={<AssignmentManagement />} />
+            <Route path="/admin/alerts" element={<AlertSettings />} />
+            <Route path="/admin/emails" element={<EmailClientManager />} />
+            <Route path="/admin/email-templates" element={<EmailTemplateManager />} />
           </Route>
         </Route>
       </Routes>

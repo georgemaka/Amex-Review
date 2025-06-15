@@ -10,12 +10,11 @@ import {
   Stack,
   Chip,
 } from '@mui/material';
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { FilterList, Clear } from '@mui/icons-material';
 import { RootState } from '../../store';
 import api from '../../services/api';
+import DateRangeSelector, { DateRange } from './DateRangeSelector';
+import { startOfMonth, endOfMonth } from 'date-fns';
 
 interface AnalyticsFiltersProps {
   onFilterChange: (filters: any) => void;
@@ -31,8 +30,17 @@ const AnalyticsFilters: React.FC<AnalyticsFiltersProps> = ({
   const { user } = useSelector((state: RootState) => state.auth);
   const [cardholders, setCardholders] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
+  const [statements, setStatements] = useState<any[]>([]);
   const [selectedCardholder, setSelectedCardholder] = useState<number | ''>('');
   const [selectedCategory, setSelectedCategory] = useState<number | ''>('');
+  const [selectedStatement, setSelectedStatement] = useState<number | ''>('');
+  
+  // Date range state
+  const [dateRange, setDateRange] = useState<DateRange>({
+    from: startOfMonth(selectedDate),
+    to: endOfMonth(selectedDate),
+    label: 'This Month',
+  });
 
   useEffect(() => {
     loadFilterData();
@@ -40,12 +48,14 @@ const AnalyticsFilters: React.FC<AnalyticsFiltersProps> = ({
 
   const loadFilterData = async () => {
     try {
-      const [cardholdersData, categoriesData] = await Promise.all([
+      const [cardholdersData, categoriesData, statementsData] = await Promise.all([
         api.getCardholders({ is_active: true }),
         api.getSpendingCategories(true),
+        api.getStatements(),
       ]);
       setCardholders(cardholdersData);
       setCategories(categoriesData);
+      setStatements(statementsData);
     } catch (error) {
       console.error('Failed to load filter data:', error);
     }
@@ -61,16 +71,39 @@ const AnalyticsFilters: React.FC<AnalyticsFiltersProps> = ({
     onFilterChange({ category_id: value || undefined });
   };
 
+  const handleStatementChange = (value: number | '') => {
+    setSelectedStatement(value);
+    onFilterChange({ statement_id: value || undefined });
+  };
+
+  const handleDateRangeChange = (range: DateRange) => {
+    setDateRange(range);
+    onFilterChange({
+      date_from: range.from.toISOString().split('T')[0],
+      date_to: range.to.toISOString().split('T')[0],
+    });
+    // Also update the legacy selectedDate for backward compatibility
+    onDateChange(range.from);
+  };
+
   const handleClearFilters = () => {
     setSelectedCardholder('');
     setSelectedCategory('');
+    setSelectedStatement('');
     const now = new Date();
+    const defaultRange: DateRange = {
+      from: startOfMonth(now),
+      to: endOfMonth(now),
+      label: 'This Month',
+    };
+    setDateRange(defaultRange);
     onDateChange(now);
     onFilterChange({
-      month: now.getMonth() + 1,
-      year: now.getFullYear(),
+      date_from: defaultRange.from.toISOString().split('T')[0],
+      date_to: defaultRange.to.toISOString().split('T')[0],
       cardholder_id: undefined,
       category_id: undefined,
+      statement_id: undefined,
     });
   };
 
@@ -83,24 +116,22 @@ const AnalyticsFilters: React.FC<AnalyticsFiltersProps> = ({
     const category = categories.find(c => c.id === selectedCategory);
     if (category) activeFilters.push(`Category: ${category.name}`);
   }
+  if (selectedStatement) {
+    const statement = statements.find(s => s.id === selectedStatement);
+    if (statement) {
+      const filename = statement.pdf_filename || statement.excel_filename || `${statement.month}/${statement.year}`;
+      const displayName = filename.replace(/\.(pdf|xlsx?)$/i, '');
+      activeFilters.push(`Statement: ${displayName}`);
+    }
+  }
 
   return (
     <Box sx={{ mb: 3 }}>
       <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 2 }}>
-        <LocalizationProvider dateAdapter={AdapterDateFns}>
-          <DatePicker
-            label="Month"
-            value={selectedDate}
-            onChange={onDateChange}
-            views={['year', 'month']}
-            slotProps={{
-              textField: {
-                size: 'small',
-                sx: { minWidth: 200 },
-              },
-            }}
-          />
-        </LocalizationProvider>
+        <DateRangeSelector
+          value={dateRange}
+          onChange={handleDateRangeChange}
+        />
 
         {user?.role === 'admin' && (
           <FormControl size="small" sx={{ minWidth: 200 }}>
@@ -136,11 +167,31 @@ const AnalyticsFilters: React.FC<AnalyticsFiltersProps> = ({
           </Select>
         </FormControl>
 
+        <FormControl size="small" sx={{ minWidth: 200 }}>
+          <InputLabel>Statement</InputLabel>
+          <Select
+            value={selectedStatement}
+            onChange={(e) => handleStatementChange(e.target.value as number | '')}
+            label="Statement"
+          >
+            <MenuItem value="">All Statements</MenuItem>
+            {statements.map((statement) => {
+              const filename = statement.pdf_filename || statement.excel_filename || `${statement.month}/${statement.year}`;
+              const displayName = filename.replace(/\.(pdf|xlsx?)$/i, '');
+              return (
+                <MenuItem key={statement.id} value={statement.id}>
+                  {displayName}
+                </MenuItem>
+              );
+            })}
+          </Select>
+        </FormControl>
+
         <Button
           variant="outlined"
           startIcon={<Clear />}
           onClick={handleClearFilters}
-          disabled={!selectedCardholder && !selectedCategory}
+          disabled={!selectedCardholder && !selectedCategory && !selectedStatement}
         >
           Clear Filters
         </Button>

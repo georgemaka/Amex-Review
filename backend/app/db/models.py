@@ -58,6 +58,7 @@ class User(Base):
     reviewer_assignments = relationship("CardholderReviewer", back_populates="reviewer")
     coded_transactions = relationship("Transaction", foreign_keys="Transaction.coded_by_id", back_populates="coded_by")
     reviewed_transactions = relationship("Transaction", foreign_keys="Transaction.reviewed_by_id", back_populates="reviewed_by")
+    email_templates = relationship("EmailTemplate", back_populates="created_by")
     
     @property
     def full_name(self):
@@ -458,3 +459,21 @@ class EquipmentCostType(Base):
     
     # Relationships
     transactions = relationship("Transaction", back_populates="equipment_cost_type")
+
+
+class EmailTemplate(Base):
+    __tablename__ = "email_templates"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False, unique=True)
+    subject = Column(String(500), nullable=False)
+    body = Column(Text, nullable=False)
+    category = Column(String(50), nullable=False)  # 'coding', 'review', 'general'
+    variables = Column(JSON, default=list)  # List of variables like {{month}}, {{year}}
+    is_active = Column(Boolean, default=True)
+    created_by_id = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    
+    # Relationships
+    created_by = relationship("User", back_populates="email_templates")

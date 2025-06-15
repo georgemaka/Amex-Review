@@ -6,9 +6,10 @@ from sqlalchemy import select, func, and_, or_
 from sqlalchemy.orm import selectinload
 
 from app.core.security import get_current_user
+from app.core.permissions import get_user_assigned_cardholders
 from app.db.models import (
-    User, Transaction, SpendingCategory, SpendingAnalytics,
-    SpendingAlert, BudgetLimit, MerchantMapping, CardholderStatement
+    User, UserRole, Transaction, SpendingCategory, SpendingAnalytics,
+    SpendingAlert, BudgetLimit, MerchantMapping, CardholderStatement, Cardholder
 )
 from app.db.schemas import (
     SpendingCategory as SpendingCategorySchema,
@@ -32,91 +33,196 @@ router = APIRouter()
 async def get_analytics_dashboard(
     month: Optional[int] = Query(None, ge=1, le=12),
     year: Optional[int] = Query(None, ge=2020),
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
     cardholder_id: Optional[int] = None,
+    category_id: Optional[int] = None,
+    statement_id: Optional[int] = None,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user)
 ) -> Any:
-    """Get analytics dashboard data."""
-    # Default to current month if not specified
-    if not month or not year:
-        now = datetime.now()
-        month = month or now.month
-        year = year or now.year
-    
-    # Build filters
-    filters = [
-        SpendingAnalytics.period_month == month,
-        SpendingAnalytics.period_year == year
-    ]
-    if cardholder_id:
-        filters.append(SpendingAnalytics.cardholder_id == cardholder_id)
-    
-    # Get current period analytics
-    result = await db.execute(
-        select(SpendingAnalytics)
-        .where(and_(*filters))
-        .options(
-            selectinload(SpendingAnalytics.category),
-            selectinload(SpendingAnalytics.cardholder)
+    """Get analytics dashboard data calculated directly from transactions."""
+    # Get user's assigned cardholders if they're a reviewer
+    assigned_cardholder_ids = []
+    if current_user.role == UserRole.REVIEWER:
+        assigned_cardholder_ids = await get_user_assigned_cardholders(
+            current_user, db, include_review_assignments=True
         )
+        if not assigned_cardholder_ids:
+            # Reviewer has no assignments - return empty dashboard
+            return AnalyticsDashboard(
+                total_spending=0,
+                total_transactions=0,
+                average_transaction=0,
+                top_categories=[],
+                top_merchants=[],
+                spending_trend=[],
+                recent_alerts=[],
+                period_comparison={
+                    'current_total': 0,
+                    'previous_total': 0,
+                    'change_amount': 0,
+                    'change_percent': 0
+                }
+            )
+    
+    # Build transaction filters
+    transaction_filters = []
+    
+    # Use date range if provided, otherwise fall back to month/year
+    if date_from and date_to:
+        try:
+            from_date = datetime.strptime(date_from, '%Y-%m-%d')
+            to_date = datetime.strptime(date_to, '%Y-%m-%d')
+            transaction_filters.extend([
+                Transaction.transaction_date >= from_date,
+                Transaction.transaction_date <= to_date
+            ])
+        except ValueError:
+            # If date parsing fails, fall back to month/year
+            pass
+    else:
+        # Fall back to month/year for backward compatibility
+        if not month or not year:
+            now = datetime.now()
+            month = month or now.month
+            year = year or now.year
+        
+        transaction_filters.extend([
+            func.extract('month', Transaction.transaction_date) == month,
+            func.extract('year', Transaction.transaction_date) == year
+        ])
+    
+    if cardholder_id:
+        transaction_filters.append(
+            CardholderStatement.cardholder_id == cardholder_id
+        )
+    elif current_user.role == UserRole.REVIEWER and assigned_cardholder_ids:
+        # Reviewer can only see their assigned cardholders
+        transaction_filters.append(
+            CardholderStatement.cardholder_id.in_(assigned_cardholder_ids)
+        )
+    
+    if category_id:
+        transaction_filters.append(Transaction.category_id == category_id)
+    
+    if statement_id:
+        transaction_filters.append(
+            CardholderStatement.statement_id == statement_id
+        )
+    
+    # Get total spending and transaction count directly from transactions
+    query = select(
+        func.count(Transaction.id).label('count'),
+        func.sum(Transaction.amount).label('total'),
+        func.avg(Transaction.amount).label('average')
+    ).select_from(Transaction)
+    
+    # Join with CardholderStatement if we need to filter by cardholder or statement
+    if cardholder_id or statement_id:
+        query = query.join(CardholderStatement)
+    
+    # Apply filters
+    query = query.where(and_(*transaction_filters))
+    
+    totals_result = await db.execute(query)
+    totals = totals_result.one()
+    
+    total_spending = float(totals.total or 0)
+    total_transactions = int(totals.count or 0)
+    average_transaction = float(totals.average or 0)
+    
+    # Get category breakdown directly from transactions
+    category_query = select(
+        Transaction.category_id,
+        SpendingCategory.name,
+        SpendingCategory.color,
+        func.count(Transaction.id).label('count'),
+        func.sum(Transaction.amount).label('total')
+    ).select_from(Transaction)
+    
+    # Join with CardholderStatement if we need to filter by cardholder or statement
+    if cardholder_id or statement_id:
+        category_query = category_query.join(CardholderStatement)
+    
+    category_query = (
+        category_query
+        .outerjoin(SpendingCategory, Transaction.category_id == SpendingCategory.id)
+        .where(and_(*transaction_filters))
+        .group_by(Transaction.category_id, SpendingCategory.name, SpendingCategory.color)
     )
-    current_analytics = result.scalars().all()
     
-    # Calculate totals
-    total_spending = sum(a.total_amount for a in current_analytics)
-    total_transactions = sum(a.transaction_count for a in current_analytics)
-    average_transaction = total_spending / total_transactions if total_transactions > 0 else 0
+    category_result = await db.execute(category_query)
+    category_data = category_result.all()
     
-    # Get category breakdown
-    category_spending = {}
-    for analytics in current_analytics:
-        cat_name = analytics.category.name if analytics.category else "Uncategorized"
-        cat_color = analytics.category.color if analytics.category else "#95A5A6"
-        cat_id = analytics.category_id or 0
-        
-        if cat_id not in category_spending:
-            category_spending[cat_id] = {
-                'category_id': cat_id,
-                'category_name': cat_name,
-                'category_color': cat_color,
-                'total_amount': 0,
-                'transaction_count': 0
-            }
-        
-        category_spending[cat_id]['total_amount'] += analytics.total_amount
-        category_spending[cat_id]['transaction_count'] += analytics.transaction_count
-    
-    # Calculate percentages and sort
     top_categories = []
-    for cat_data in category_spending.values():
-        cat_data['percentage'] = (cat_data['total_amount'] / total_spending * 100) if total_spending > 0 else 0
-        top_categories.append(CategorySpending(**cat_data))
+    for row in category_data:
+        cat_id = row.category_id or 0
+        cat_name = row.name or "Uncategorized"
+        cat_color = row.color or "#95A5A6"
+        cat_total = float(row.total or 0)
+        cat_count = int(row.count or 0)
+        
+        percentage = (cat_total / total_spending * 100) if total_spending > 0 else 0
+        
+        top_categories.append(CategorySpending(
+            category_id=cat_id,
+            category_name=cat_name,
+            category_color=cat_color,
+            total_amount=cat_total,
+            transaction_count=cat_count,
+            percentage=percentage
+        ))
     
     top_categories.sort(key=lambda x: x.total_amount, reverse=True)
     
-    # Get top merchants from all analytics
-    all_merchants = {}
-    for analytics in current_analytics:
-        if analytics.top_merchants:
-            for merchant_data in analytics.top_merchants:
-                merchant = merchant_data['merchant']
-                if merchant not in all_merchants:
-                    all_merchants[merchant] = {
-                        'amount': 0,
-                        'count': 0,
-                        'category': analytics.category.name if analytics.category else "Uncategorized"
-                    }
-                all_merchants[merchant]['amount'] += merchant_data['amount']
-                all_merchants[merchant]['count'] += merchant_data['count']
+    # Get top merchants directly from transactions
+    merchant_query = select(
+        Transaction.merchant_name,
+        SpendingCategory.name.label('category_name'),
+        func.count(Transaction.id).label('count'),
+        func.sum(Transaction.amount).label('total'),
+        func.avg(Transaction.amount).label('average')
+    ).select_from(Transaction)
+    
+    # Join with CardholderStatement if we need to filter by cardholder or statement
+    if cardholder_id or statement_id:
+        merchant_query = merchant_query.join(CardholderStatement)
+    
+    merchant_query = (
+        merchant_query
+        .outerjoin(SpendingCategory, Transaction.category_id == SpendingCategory.id)
+        .where(
+            and_(
+                *transaction_filters,
+                Transaction.merchant_name.isnot(None)
+            )
+        )
+        .group_by(Transaction.merchant_name, SpendingCategory.name)
+        .order_by(func.sum(Transaction.amount).desc())
+        .limit(10)
+    )
+    
+    merchant_result = await db.execute(merchant_query)
+    merchant_data = merchant_result.all()
     
     top_merchants = []
-    for merchant, data in sorted(all_merchants.items(), key=lambda x: x[1]['amount'], reverse=True)[:10]:
+    for row in merchant_data:
+        # Clean up merchant name for better display
+        merchant_name = row.merchant_name
+        if merchant_name:
+            # Remove REF# prefix if present
+            if merchant_name.startswith('REF#'):
+                parts = merchant_name.split(' ', 2)
+                if len(parts) > 2:
+                    merchant_name = parts[2]  # Get everything after REF# and number
+            
         top_merchants.append(MerchantSpending(
-            merchant_name=merchant,
-            total_amount=data['amount'],
-            transaction_count=data['count'],
-            average_amount=data['amount'] / data['count'] if data['count'] > 0 else 0,
-            category_name=data['category']
+            merchant_name=merchant_name,
+            total_amount=float(row.total or 0),
+            transaction_count=int(row.count or 0),
+            average_amount=float(row.average or 0),
+            category_name=row.category_name or "Uncategorized"
         ))
     
     # Get spending trend (last 12 months)
@@ -141,30 +247,72 @@ async def get_analytics_dashboard(
     )
     recent_alerts = alert_result.scalars().all()
     
-    # Calculate period comparison (current vs previous month)
-    prev_month = month - 1 if month > 1 else 12
-    prev_year = year if month > 1 else year - 1
+    # Calculate period comparison from transactions
+    prev_filters = []
     
-    prev_result = await db.execute(
-        select(
-            func.sum(SpendingAnalytics.total_amount).label('total'),
-            func.sum(SpendingAnalytics.transaction_count).label('count')
+    if date_from and date_to:
+        # For date ranges, calculate the previous period of the same duration
+        try:
+            from_date = datetime.strptime(date_from, '%Y-%m-%d')
+            to_date = datetime.strptime(date_to, '%Y-%m-%d')
+            period_days = (to_date - from_date).days + 1
+            
+            # Previous period is the same duration before the current period
+            prev_to_date = from_date - timedelta(days=1)
+            prev_from_date = prev_to_date - timedelta(days=period_days - 1)
+            
+            prev_filters.extend([
+                Transaction.transaction_date >= prev_from_date,
+                Transaction.transaction_date <= prev_to_date
+            ])
+        except ValueError:
+            pass
+    else:
+        # For month/year, use previous month
+        prev_month = month - 1 if month > 1 else 12
+        prev_year = year if month > 1 else year - 1
+        
+        prev_filters.extend([
+            func.extract('month', Transaction.transaction_date) == prev_month,
+            func.extract('year', Transaction.transaction_date) == prev_year
+        ])
+    
+    if cardholder_id:
+        prev_filters.append(
+            CardholderStatement.cardholder_id == cardholder_id
         )
-        .where(
-            and_(
-                SpendingAnalytics.period_month == prev_month,
-                SpendingAnalytics.period_year == prev_year,
-                SpendingAnalytics.cardholder_id == cardholder_id if cardholder_id else True
-            )
-        )
-    )
+    
+    if category_id:
+        prev_filters.append(Transaction.category_id == category_id)
+    
+    if statement_id:
+        # For previous period with statement filter, we might not have data
+        # So we'll skip the statement filter for previous period comparison
+        pass
+    
+    prev_query = select(
+        func.sum(Transaction.amount).label('total'),
+        func.count(Transaction.id).label('count')
+    ).select_from(Transaction)
+    
+    # Join with CardholderStatement if we need to filter by cardholder
+    if cardholder_id:
+        prev_query = prev_query.join(CardholderStatement)
+    
+    prev_query = prev_query.where(and_(*prev_filters))
+    
+    prev_result = await db.execute(prev_query)
     prev_data = prev_result.one()
+    
+    previous_total = float(prev_data.total or 0)
+    change_amount = total_spending - previous_total
+    change_percent = ((total_spending / previous_total - 1) * 100) if previous_total > 0 else 0
     
     period_comparison = {
         'current_total': total_spending,
-        'previous_total': prev_data.total or 0,
-        'change_amount': total_spending - (prev_data.total or 0),
-        'change_percent': ((total_spending / prev_data.total - 1) * 100) if prev_data.total else 0
+        'previous_total': previous_total,
+        'change_amount': change_amount,
+        'change_percent': change_percent
     }
     
     return AnalyticsDashboard(
@@ -184,6 +332,7 @@ async def get_spending_by_category(
     month: Optional[int] = Query(None, ge=1, le=12),
     year: Optional[int] = Query(None, ge=2020),
     cardholder_id: Optional[int] = None,
+    statement_id: Optional[int] = None,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user)
 ) -> Any:
@@ -247,6 +396,7 @@ async def get_spending_by_merchant(
     year: Optional[int] = Query(None, ge=2020),
     cardholder_id: Optional[int] = None,
     category_id: Optional[int] = None,
+    statement_id: Optional[int] = None,
     limit: int = Query(20, le=100),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user)
@@ -285,6 +435,7 @@ async def get_spending_by_merchant(
 async def get_spending_trends(
     cardholder_id: Optional[int] = None,
     category_id: Optional[int] = None,
+    statement_id: Optional[int] = None,
     months: int = Query(12, ge=1, le=24),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user)
@@ -304,110 +455,117 @@ async def get_spending_trends(
 async def get_spending_by_cardholder(
     month: Optional[int] = Query(None, ge=1, le=12),
     year: Optional[int] = Query(None, ge=2020),
+    statement_id: Optional[int] = None,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user)
 ) -> Any:
-    """Get spending by cardholder."""
+    """Get spending by cardholder calculated from transactions."""
     # Default to current month
     if not month or not year:
         now = datetime.now()
         month = month or now.month
         year = year or now.year
     
-    # Get current period data
+    # Build filters
+    filters = [
+        func.extract('month', Transaction.transaction_date) == month,
+        func.extract('year', Transaction.transaction_date) == year
+    ]
+    
+    if statement_id:
+        filters.append(CardholderStatement.statement_id == statement_id)
+    
+    # Get current period data from transactions
     result = await db.execute(
         select(
-            SpendingAnalytics.cardholder_id,
-            func.sum(SpendingAnalytics.total_amount).label('total_amount'),
-            func.sum(SpendingAnalytics.transaction_count).label('transaction_count')
+            CardholderStatement.cardholder_id,
+            Cardholder.full_name,
+            func.count(Transaction.id).label('transaction_count'),
+            func.sum(Transaction.amount).label('total_amount')
         )
-        .where(
-            and_(
-                SpendingAnalytics.period_month == month,
-                SpendingAnalytics.period_year == year
-            )
-        )
-        .group_by(SpendingAnalytics.cardholder_id)
+        .select_from(Transaction)
+        .join(CardholderStatement)
+        .join(Cardholder)
+        .where(and_(*filters))
+        .group_by(CardholderStatement.cardholder_id, Cardholder.full_name)
+        .order_by(func.sum(Transaction.amount).desc())
     )
+    current_data = result.all()
     
-    # Get previous period data for trend
+    # Get previous period data for trend calculation
     prev_month = month - 1 if month > 1 else 12
     prev_year = year if month > 1 else year - 1
     
+    prev_filters = [
+        func.extract('month', Transaction.transaction_date) == prev_month,
+        func.extract('year', Transaction.transaction_date) == prev_year
+    ]
+    
+    if statement_id:
+        # Skip statement filter for previous period
+        pass
+    
     prev_result = await db.execute(
         select(
-            SpendingAnalytics.cardholder_id,
-            func.sum(SpendingAnalytics.total_amount).label('total_amount')
+            CardholderStatement.cardholder_id,
+            func.sum(Transaction.amount).label('total_amount')
         )
-        .where(
-            and_(
-                SpendingAnalytics.period_month == prev_month,
-                SpendingAnalytics.period_year == prev_year
-            )
-        )
-        .group_by(SpendingAnalytics.cardholder_id)
+        .select_from(Transaction)
+        .join(CardholderStatement)
+        .where(and_(*prev_filters))
+        .group_by(CardholderStatement.cardholder_id)
     )
-    prev_data = {row.cardholder_id: row.total_amount for row in prev_result}
+    prev_data = {row.cardholder_id: float(row.total_amount or 0) for row in prev_result.all()}
     
-    # Get cardholders
-    from app.db.models import Cardholder
-    ch_result = await db.execute(select(Cardholder))
-    cardholders = {c.id: c for c in ch_result.scalars().all()}
-    
-    # Get top categories per cardholder
+    # Get top category for each cardholder
     cat_result = await db.execute(
         select(
-            SpendingAnalytics.cardholder_id,
-            SpendingAnalytics.category_id,
-            func.sum(SpendingAnalytics.total_amount).label('amount')
+            CardholderStatement.cardholder_id,
+            SpendingCategory.name,
+            func.sum(Transaction.amount).label('amount')
         )
-        .where(
-            and_(
-                SpendingAnalytics.period_month == month,
-                SpendingAnalytics.period_year == year
-            )
+        .select_from(Transaction)
+        .join(CardholderStatement)
+        .outerjoin(SpendingCategory, Transaction.category_id == SpendingCategory.id)
+        .where(and_(*filters))
+        .group_by(CardholderStatement.cardholder_id, SpendingCategory.name)
+        .order_by(
+            CardholderStatement.cardholder_id,
+            func.sum(Transaction.amount).desc()
         )
-        .group_by(SpendingAnalytics.cardholder_id, SpendingAnalytics.category_id)
-        .order_by(SpendingAnalytics.cardholder_id, func.sum(SpendingAnalytics.total_amount).desc())
     )
     
-    # Get categories
-    cat_names_result = await db.execute(select(SpendingCategory))
-    categories = {c.id: c.name for c in cat_names_result.scalars().all()}
-    
-    # Group top categories by cardholder
+    # Get top category per cardholder
     top_categories = {}
-    for row in cat_result:
+    for row in cat_result.all():
         if row.cardholder_id not in top_categories:
-            cat_name = categories.get(row.category_id, "Uncategorized") if row.category_id else "Uncategorized"
-            top_categories[row.cardholder_id] = cat_name
+            top_categories[row.cardholder_id] = row.name or "Uncategorized"
     
     # Build response
     cardholder_spending = []
-    for row in result:
-        cardholder = cardholders.get(row.cardholder_id)
-        if not cardholder:
-            continue
+    for row in current_data:
+        total_amount = float(row.total_amount or 0)
+        prev_amount = prev_data.get(row.cardholder_id, 0)
         
         # Calculate trend
-        prev_amount = prev_data.get(row.cardholder_id, 0)
+        trend = 'stable'
         if prev_amount > 0:
-            change = (row.total_amount - prev_amount) / prev_amount
-            trend = "up" if change > 0.05 else "down" if change < -0.05 else "stable"
-        else:
-            trend = "up" if row.total_amount > 0 else "stable"
+            change = ((total_amount - prev_amount) / prev_amount) * 100
+            if change > 10:
+                trend = 'up'
+            elif change < -10:
+                trend = 'down'
+        elif total_amount > 0:
+            trend = 'up'
         
         cardholder_spending.append(CardholderSpending(
             cardholder_id=row.cardholder_id,
-            cardholder_name=cardholder.full_name,
-            total_amount=float(row.total_amount),
-            transaction_count=row.transaction_count,
-            top_category=top_categories.get(row.cardholder_id),
+            cardholder_name=row.full_name,
+            total_amount=total_amount,
+            transaction_count=int(row.transaction_count or 0),
+            top_category=top_categories.get(row.cardholder_id, "Uncategorized"),
             trend=trend
         ))
-    
-    # Sort by total amount
-    cardholder_spending.sort(key=lambda x: x.total_amount, reverse=True)
     
     return cardholder_spending
 

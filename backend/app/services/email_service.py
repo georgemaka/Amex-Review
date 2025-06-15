@@ -1,6 +1,6 @@
 import os
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 from datetime import datetime, timedelta
 import platform
 
@@ -28,7 +28,7 @@ class EmailService:
             try:
                 self.outlook = win32com.client.Dispatch("Outlook.Application")
             except:
-                logger.warning("Failed to connect to Outlook, falling back to SMTP")
+                logger.warning("Failed to connect to Outlook, email features will be limited")
                 self.use_outlook = False
     
     def send_coding_assignment(self, 
@@ -195,3 +195,150 @@ class EmailService:
             "July", "August", "September", "October", "November", "December"
         ]
         return months[month - 1] if 1 <= month <= 12 else str(month)
+    
+    def send_group_notification(self,
+                              recipients: List[str],
+                              subject: str,
+                              body: str,
+                              attachments: List[str] = None,
+                              cc_recipients: List[str] = None,
+                              is_draft: bool = False) -> Dict:
+        """Send notification to a group of recipients.
+        
+        Args:
+            recipients: List of recipient emails
+            subject: Email subject
+            body: HTML body content
+            attachments: Optional list of attachment paths
+            cc_recipients: Optional CC recipients
+            is_draft: If True, creates drafts instead of sending
+            
+        Returns:
+            Dict with results for each recipient
+        """
+        results = {
+            "successful": [],
+            "failed": [],
+            "drafts": []
+        }
+        
+        # Use Outlook if available, otherwise return error
+        if self.use_outlook:
+            for recipient in recipients:
+                success = self._send_outlook_email(
+                    recipient=recipient,
+                    cc_recipients=cc_recipients or [],
+                    subject=subject,
+                    body=body,
+                    attachments=attachments or []
+                )
+                if success:
+                    results["drafts" if is_draft else "successful"].append(recipient)
+                else:
+                    results["failed"].append({
+                        "recipient": recipient,
+                        "error": "Failed to create draft"
+                    })
+        
+        else:
+            results["failed"] = [{"recipient": r, "error": "No email service available"} for r in recipients]
+        
+        return results
+    
+    def send_statement_ready_notification(self,
+                                        statement_info: Dict,
+                                        recipient_type: str = "all",
+                                        specific_recipients: List[str] = None) -> Dict:
+        """Send notification that statements are ready for coding/review.
+        
+        Args:
+            statement_info: Dict with statement details (month, year, cardholder_count, etc.)
+            recipient_type: "all_coders", "all_reviewers", "specific", or "all"
+            specific_recipients: List of specific email addresses if recipient_type is "specific"
+            
+        Returns:
+            Dict with send results
+        """
+        month_name = self._get_month_name(statement_info["month"])
+        year = statement_info["year"]
+        cardholder_count = statement_info.get("cardholder_count", 0)
+        
+        # Build recipient list based on type
+        recipients = []
+        if recipient_type == "specific" and specific_recipients:
+            recipients = specific_recipients
+        else:
+            # This would need to be fetched from the database
+            # For now, returning placeholder
+            logger.warning(f"Group email for {recipient_type} not yet implemented")
+            return {"error": "Group recipient fetching not implemented"}
+        
+        # Create subject and body based on recipient type
+        if "coder" in recipient_type.lower():
+            subject = f"{month_name} {year} American Express Statements Ready for Coding"
+            body = self._generate_ready_for_coding_body(month_name, year, cardholder_count)
+        else:
+            subject = f"{month_name} {year} American Express Statements Ready for Review"
+            body = self._generate_ready_for_review_body(month_name, year, cardholder_count)
+        
+        return self.send_group_notification(
+            recipients=recipients,
+            subject=subject,
+            body=body,
+            is_draft=True  # Default to drafts for safety
+        )
+    
+    def _generate_ready_for_coding_body(self, month: str, year: int, cardholder_count: int) -> str:
+        """Generate email body for coding ready notification."""
+        return f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; font-size: 14px;">
+            <p>Hello,</p>
+            
+            <p>The American Express statements for <strong>{month} {year}</strong> are now ready for coding.</p>
+            
+            <p><strong>Summary:</strong></p>
+            <ul>
+                <li>Total Cardholders: {cardholder_count}</li>
+                <li>Portal URL: <a href="{settings.FRONTEND_URL or 'http://sukutapps.com'}/statements">Access Portal</a></li>
+            </ul>
+            
+            <p>Please log in to the AMEX Coding Portal to access your assigned statements and begin coding.</p>
+            
+            <p><strong>Reminder:</strong> Please complete coding within 7 business days.</p>
+            
+            <p>If you have any questions or issues accessing the portal, please contact the Accounting Department.</p>
+            
+            <p>Thank you,<br>
+            GL Team<br>
+            Accounting Department</p>
+        </body>
+        </html>
+        """
+    
+    def _generate_ready_for_review_body(self, month: str, year: int, cardholder_count: int) -> str:
+        """Generate email body for review ready notification."""
+        return f"""
+        <html>
+        <body style="font-family: Arial, sans-serif; font-size: 14px;">
+            <p>Hello,</p>
+            
+            <p>The American Express statements for <strong>{month} {year}</strong> have been coded and are ready for your review.</p>
+            
+            <p><strong>Summary:</strong></p>
+            <ul>
+                <li>Total Cardholders: {cardholder_count}</li>
+                <li>Portal URL: <a href="{settings.FRONTEND_URL or 'http://sukutapps.com'}/statements">Access Portal</a></li>
+            </ul>
+            
+            <p>Please log in to the AMEX Coding Portal to review the coded transactions for your assigned cardholders.</p>
+            
+            <p>If you find any discrepancies or have questions about specific charges, please use the portal's 
+            rejection feature to send them back for correction.</p>
+            
+            <p>Thank you,<br>
+            GL Team<br>
+            Accounting Department</p>
+        </body>
+        </html>
+        """

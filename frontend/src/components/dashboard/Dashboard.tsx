@@ -11,20 +11,20 @@ import {
   CardActions,
   Button,
   LinearProgress,
-  Chip,
 } from '@mui/material';
 import {
   Description,
   Assignment,
-  CheckCircle,
-  Schedule,
-  TrendingUp,
+  People,
+  CalendarToday,
+  Warning,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { RootState, AppDispatch } from '../../store';
 import { fetchStatements } from '../../store/slices/statementSlice';
 import StatCard from './StatCard';
 import RecentStatements from './RecentStatements';
+import DashboardAlerts from './DashboardAlerts';
 
 const Dashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -38,17 +38,30 @@ const Dashboard: React.FC = () => {
 
   const stats = React.useMemo(() => {
     const total = statements.length;
-    const pending = statements.filter(s => s.status === 'pending').length;
-    const processing = statements.filter(s => s.status === 'processing').length;
-    const completed = statements.filter(s => s.status === 'completed').length;
-    const inProgress = statements.filter(s => s.status === 'in_progress').length;
+    
+    // Calculate total cardholders across all statements
+    const totalCardholders = statements.reduce((sum, s) => sum + (s.cardholder_count || 0), 0);
+    
+    // Calculate statements by actual status
+    const split = statements.filter(s => s.status === 'split').length;
+    const distributed = statements.filter(s => s.status === 'distributed').length;
+    const needsAttention = statements.filter(s => 
+      s.status === 'pending' || s.status === 'processing' || s.status === 'error'
+    ).length;
+    
+    // Get current month's statements
+    const currentMonth = new Date().getMonth() + 1;
+    const currentYear = new Date().getFullYear();
+    const currentMonthStatements = statements.filter(s => 
+      s.month === currentMonth && s.year === currentYear
+    ).length;
 
     return {
       total,
-      pending,
-      processing,
-      completed,
-      inProgress,
+      totalCardholders,
+      split,
+      currentMonthStatements,
+      needsAttention,
     };
   }, [statements]);
 
@@ -68,6 +81,11 @@ const Dashboard: React.FC = () => {
         {format(new Date(), 'EEEE, MMMM d, yyyy')}
       </Typography>
 
+      {/* Admin alerts for missing and unassigned cardholders */}
+      {user?.role === 'admin' && (
+        <DashboardAlerts />
+      )}
+
       {user?.role === 'admin' && (
         <Grid container spacing={3} sx={{ mb: 4 }}>
           <Grid item xs={12} sm={6} md={3}>
@@ -80,26 +98,26 @@ const Dashboard: React.FC = () => {
           </Grid>
           <Grid item xs={12} sm={6} md={3}>
             <StatCard
-              title="Pending"
-              value={stats.pending}
-              icon={<Schedule />}
-              color="warning"
-            />
-          </Grid>
-          <Grid item xs={12} sm={6} md={3}>
-            <StatCard
-              title="In Progress"
-              value={stats.inProgress}
-              icon={<TrendingUp />}
+              title="Total Cardholders"
+              value={stats.totalCardholders}
+              icon={<People />}
               color="info"
             />
           </Grid>
           <Grid item xs={12} sm={6} md={3}>
             <StatCard
-              title="Completed"
-              value={stats.completed}
-              icon={<CheckCircle />}
+              title="Current Month"
+              value={stats.currentMonthStatements}
+              icon={<CalendarToday />}
               color="success"
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <StatCard
+              title="Needs Attention"
+              value={stats.needsAttention}
+              icon={<Warning />}
+              color={stats.needsAttention > 0 ? "warning" : "info"}
             />
           </Grid>
         </Grid>

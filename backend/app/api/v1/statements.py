@@ -10,10 +10,11 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
 from app.core.security import get_current_user, check_user_role
+from app.core.permissions import get_user_assigned_cardholders
 from app.core.config import settings
 from app.db.models import (
     User, UserRole, Statement, StatementStatus, 
-    CardholderStatement, Transaction
+    CardholderStatement, Transaction, CardholderAssignment, CardholderReviewer
 )
 from app.db.schemas import (
     Statement as StatementSchema,
@@ -111,15 +112,35 @@ async def list_statements(
     skip: int = 0,
     limit: int = 20
 ) -> Any:
-    from sqlalchemy import func
+    from sqlalchemy import func, and_, or_
     
-    # Query statements with cardholder count
+    # Get user's assigned cardholders
+    assigned_cardholder_ids = await get_user_assigned_cardholders(
+        current_user, db, include_review_assignments=True
+    )
+    
+    # Build base query
     stmt = (
         select(
             Statement,
             func.count(CardholderStatement.id).label('cardholder_count')
         )
         .outerjoin(CardholderStatement, Statement.id == CardholderStatement.statement_id)
+    )
+    
+    # Apply filters based on user role
+    if current_user.role in [UserRole.CODER, UserRole.REVIEWER] and assigned_cardholder_ids:
+        # Filter to only show statements with assigned cardholders
+        stmt = stmt.where(
+            CardholderStatement.cardholder_id.in_(assigned_cardholder_ids)
+        )
+    elif current_user.role in [UserRole.CODER, UserRole.REVIEWER] and not assigned_cardholder_ids:
+        # User has no assignments - return empty list
+        return []
+    
+    # Complete the query
+    stmt = (
+        stmt
         .group_by(Statement.id)
         .order_by(Statement.year.desc(), Statement.month.desc())
         .offset(skip)

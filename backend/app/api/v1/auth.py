@@ -1,6 +1,6 @@
-from datetime import timedelta
+from datetime import timedelta, datetime
 from typing import Any
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -11,7 +11,7 @@ from app.core.security import (
     verify_password,
     get_current_user
 )
-from app.db.models import User
+from app.db.models import User, UserActivity
 from app.db.schemas import Token, User as UserSchema, UserWithToken
 from app.db.session import get_async_db
 
@@ -21,7 +21,8 @@ router = APIRouter()
 @router.post("/login", response_model=UserWithToken)
 async def login(
     db: AsyncSession = Depends(get_async_db),
-    form_data: OAuth2PasswordRequestForm = Depends()
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    request: Request = None
 ) -> Any:
     # Get user by email
     result = await db.execute(
@@ -41,6 +42,22 @@ async def login(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Inactive user"
         )
+    
+    # Update last login time
+    user.last_login = datetime.utcnow()
+    
+    # Create user activity log
+    activity = UserActivity(
+        user_id=user.id,
+        activity_type="login",
+        description=f"User logged in",
+        ip_address=request.client.host if request else None,
+        user_agent=request.headers.get("user-agent", "")[:500] if request else None,
+        activity_metadata={"email": user.email}
+    )
+    db.add(activity)
+    await db.commit()
+    await db.refresh(user)
     
     # Create access token
     access_token = create_access_token(user.id)

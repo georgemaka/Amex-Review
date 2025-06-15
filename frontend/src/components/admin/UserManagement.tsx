@@ -23,18 +23,23 @@ import {
   Select,
   MenuItem,
   Grid,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import {
   Add,
   Edit,
   Delete,
   PersonAdd,
+  Assignment,
 } from '@mui/icons-material';
+import { Autocomplete } from '@mui/material';
 import { Formik, Form } from 'formik';
 import * as Yup from 'yup';
 import { AppDispatch } from '../../store';
 import { addNotification } from '../../store/slices/uiSlice';
 import api from '../../services/api';
+import AssignmentManagement from './AssignmentManagement';
 
 interface User {
   id: number;
@@ -44,7 +49,9 @@ interface User {
   role: string;
   is_active: boolean;
   is_superuser: boolean;
+  last_login?: string;
   created_at: string;
+  assignment_count?: number;
 }
 
 const validationSchema = Yup.object({
@@ -71,6 +78,13 @@ const UserManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [activeTab, setActiveTab] = useState(0);
+  const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false);
+  const [selectedUserAssignments, setSelectedUserAssignments] = useState<any[]>([]);
+  const [viewingUser, setViewingUser] = useState<User | null>(null);
+  const [addAssignmentDialogOpen, setAddAssignmentDialogOpen] = useState(false);
+  const [availableCardholders, setAvailableCardholders] = useState<any[]>([]);
+  const [selectedCardholderId, setSelectedCardholderId] = useState<number | null>(null);
 
   useEffect(() => {
     fetchUsers();
@@ -118,6 +132,101 @@ const UserManagement: React.FC = () => {
     }
   };
 
+  const handleViewAssignments = async (user: User) => {
+    setViewingUser(user);
+    try {
+      // Fetch assignments based on user role
+      let response;
+      if (user.role === 'coder') {
+        // Get cardholder assignments for coder
+        response = await api.getUserAssignments(user.id, 'coder');
+      } else if (user.role === 'reviewer') {
+        // Get cardholder assignments for reviewer
+        response = await api.getUserAssignments(user.id, 'reviewer');
+      }
+      setSelectedUserAssignments(response || []);
+      setAssignmentDialogOpen(true);
+    } catch (error) {
+      console.error('Error fetching assignments:', error);
+      dispatch(addNotification({
+        type: 'error',
+        message: 'Failed to fetch user assignments'
+      }));
+      setSelectedUserAssignments([]);
+      setAssignmentDialogOpen(true);
+    }
+  };
+
+  const handleRemoveAssignment = async (assignmentId: number) => {
+    if (!viewingUser) return;
+    
+    if (window.confirm('Are you sure you want to remove this assignment?')) {
+      try {
+        await api.removeUserAssignment(assignmentId, viewingUser.role);
+        dispatch(addNotification({
+          type: 'success',
+          message: 'Assignment removed successfully'
+        }));
+        // Refresh assignments
+        handleViewAssignments(viewingUser);
+        // Refresh users to update counts
+        fetchUsers();
+      } catch (error) {
+        dispatch(addNotification({
+          type: 'error',
+          message: 'Failed to remove assignment'
+        }));
+      }
+    }
+  };
+
+  const handleAddAssignment = async (user: User | null) => {
+    if (!user) return;
+    
+    setViewingUser(user);
+    try {
+      // Fetch all cardholders
+      const allCardholders = await api.getCardholders({ is_active: true });
+      
+      // Get current assignments to filter out already assigned ones
+      const currentAssignments = await api.getUserAssignments(user.id, user.role);
+      const assignedIds = currentAssignments.map((a: any) => a.cardholder_id);
+      
+      // Filter out already assigned cardholders
+      const available = allCardholders.filter((ch: any) => !assignedIds.includes(ch.id));
+      setAvailableCardholders(available);
+      setAddAssignmentDialogOpen(true);
+    } catch (error) {
+      dispatch(addNotification({
+        type: 'error',
+        message: 'Failed to load available cardholders'
+      }));
+    }
+  };
+
+  const handleConfirmAddAssignment = async () => {
+    if (!viewingUser || !selectedCardholderId) return;
+    
+    try {
+      await api.addUserAssignment(viewingUser.id, selectedCardholderId, viewingUser.role);
+      dispatch(addNotification({
+        type: 'success',
+        message: 'Assignment added successfully'
+      }));
+      setAddAssignmentDialogOpen(false);
+      setSelectedCardholderId(null);
+      // Refresh assignments
+      handleViewAssignments(viewingUser);
+      // Refresh users to update counts
+      fetchUsers();
+    } catch (error) {
+      dispatch(addNotification({
+        type: 'error',
+        message: 'Failed to add assignment'
+      }));
+    }
+  };
+
   const handleSubmit = async (values: any) => {
     try {
       if (editingUser) {
@@ -160,16 +269,30 @@ const UserManagement: React.FC = () => {
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
         <Typography variant="h4">User Management</Typography>
-        <Button
-          variant="contained"
-          startIcon={<PersonAdd />}
-          onClick={handleCreateUser}
-        >
-          Add User
-        </Button>
+        {activeTab === 0 && (
+          <Button
+            variant="contained"
+            startIcon={<PersonAdd />}
+            onClick={handleCreateUser}
+          >
+            Add User
+          </Button>
+        )}
       </Box>
 
-      <Paper>
+      <Paper sx={{ mb: 2 }}>
+        <Tabs
+          value={activeTab}
+          onChange={(e, newValue) => setActiveTab(newValue)}
+          sx={{ borderBottom: 1, borderColor: 'divider' }}
+        >
+          <Tab label="Users" />
+          <Tab label="Assignments" icon={<Assignment />} iconPosition="start" />
+        </Tabs>
+      </Paper>
+
+      {activeTab === 0 && (
+        <Paper>
         <TableContainer>
           <Table>
             <TableHead>
@@ -177,7 +300,9 @@ const UserManagement: React.FC = () => {
                 <TableCell>Name</TableCell>
                 <TableCell>Email</TableCell>
                 <TableCell>Role</TableCell>
+                <TableCell>Assignments</TableCell>
                 <TableCell>Status</TableCell>
+                <TableCell>Last Login</TableCell>
                 <TableCell>Created</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
@@ -205,11 +330,28 @@ const UserManagement: React.FC = () => {
                     />
                   </TableCell>
                   <TableCell>
+                    {user.role !== 'admin' && (
+                      <Chip
+                        label={user.assignment_count || 0}
+                        size="small"
+                        variant="outlined"
+                        onClick={() => handleViewAssignments(user)}
+                        sx={{ cursor: 'pointer' }}
+                      />
+                    )}
+                  </TableCell>
+                  <TableCell>
                     <Chip
                       label={user.is_active ? 'Active' : 'Inactive'}
                       size="small"
                       color={user.is_active ? 'success' : 'default'}
                     />
+                  </TableCell>
+                  <TableCell>
+                    {user.last_login 
+                      ? new Date(user.last_login).toLocaleString()
+                      : 'Never'
+                    }
                   </TableCell>
                   <TableCell>
                     {new Date(user.created_at).toLocaleDateString()}
@@ -235,6 +377,9 @@ const UserManagement: React.FC = () => {
           </Table>
         </TableContainer>
       </Paper>
+      )}
+
+      {activeTab === 1 && <AssignmentManagement />}
 
       {/* User Dialog */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
@@ -359,6 +504,129 @@ const UserManagement: React.FC = () => {
             </Form>
           )}
         </Formik>
+      </Dialog>
+
+      {/* Assignment Dialog */}
+      <Dialog 
+        open={assignmentDialogOpen} 
+        onClose={() => setAssignmentDialogOpen(false)} 
+        maxWidth="md" 
+        fullWidth
+      >
+        <DialogTitle>
+          {viewingUser && (
+            <>Assignments for {viewingUser.first_name} {viewingUser.last_name}</>  
+          )}
+        </DialogTitle>
+        <DialogContent>
+          {selectedUserAssignments.length === 0 ? (
+            <Box sx={{ textAlign: 'center', py: 4 }}>
+              <Typography color="text.secondary">
+                No cardholders assigned to this user
+              </Typography>
+            </Box>
+          ) : (
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Cardholder Name</TableCell>
+                    <TableCell>Card Number</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell align="right">Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {selectedUserAssignments.map((assignment) => (
+                    <TableRow key={assignment.id} hover>
+                      <TableCell>{assignment.cardholder_name || 'N/A'}</TableCell>
+                      <TableCell>{assignment.card_number || 'N/A'}</TableCell>
+                      <TableCell>
+                        <Chip 
+                          label={assignment.is_active ? 'Active' : 'Inactive'}
+                          size="small"
+                          color={assignment.is_active ? 'success' : 'default'}
+                        />
+                      </TableCell>
+                      <TableCell align="right">
+                        <IconButton
+                          size="small"
+                          onClick={() => handleRemoveAssignment(assignment.id)}
+                          color="error"
+                        >
+                          <Delete />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button 
+            onClick={() => handleAddAssignment(viewingUser)} 
+            startIcon={<Add />}
+            variant="outlined"
+          >
+            Add Assignment
+          </Button>
+          <Button onClick={() => setAssignmentDialogOpen(false)}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Add Assignment Dialog */}
+      <Dialog 
+        open={addAssignmentDialogOpen} 
+        onClose={() => {
+          setAddAssignmentDialogOpen(false);
+          setSelectedCardholderId(null);
+        }} 
+        maxWidth="sm" 
+        fullWidth
+      >
+        <DialogTitle>
+          Add Assignment for {viewingUser?.first_name} {viewingUser?.last_name}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 2 }}>
+            <Autocomplete
+              options={availableCardholders}
+              getOptionLabel={(option) => `${option.full_name} (${option.card_last_four || 'N/A'})`}
+              value={availableCardholders.find(c => c.id === selectedCardholderId) || null}
+              onChange={(event, newValue) => {
+                setSelectedCardholderId(newValue?.id || null);
+              }}
+              renderInput={(params) => (
+                <TextField 
+                  {...params} 
+                  label="Select Cardholder" 
+                  fullWidth
+                  helperText={availableCardholders.length === 0 ? "No available cardholders to assign" : ""}
+                />
+              )}
+              noOptionsText="No cardholders available"
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {
+            setAddAssignmentDialogOpen(false);
+            setSelectedCardholderId(null);
+          }}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleConfirmAddAssignment}
+            variant="contained"
+            disabled={!selectedCardholderId}
+          >
+            Add Assignment
+          </Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );

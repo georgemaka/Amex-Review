@@ -496,7 +496,7 @@ const CodeTransactions: React.FC = () => {
     if (order === 'asc') {
       return aValue > bValue ? 1 : -1;
     }
-    return aValue < bValue ? 1 : -1;
+    return aValue > bValue ? -1 : 1;
   });
 
   const handleRequestSort = (property: string) => {
@@ -991,7 +991,11 @@ const CodeTransactions: React.FC = () => {
             <Autocomplete
               size="small"
               options={statements}
-              getOptionLabel={(option) => `${option.month}/${option.year}${option.is_locked ? ' (Locked)' : ''}`}
+              getOptionLabel={(option) => {
+                const filename = option.pdf_filename || option.excel_filename || `${option.month}/${option.year}`;
+                const displayName = filename.replace(/\.(pdf|xlsx?)$/i, '');
+                return `${displayName}${option.is_locked ? ' (Locked)' : ''}`;
+              }}
               value={statements.find(s => s.id === selectedStatement) || null}
               onChange={(_, newValue) => {
                 setSelectedStatement(newValue?.id || '');
@@ -999,22 +1003,26 @@ const CodeTransactions: React.FC = () => {
               renderInput={(params) => (
                 <TextField {...params} label="Statement" placeholder="Select statement..." />
               )}
-              renderOption={(props, option) => (
-                <Box component="li" {...props}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
-                    <span>{option.month}/{option.year}</span>
-                    {option.is_locked && (
-                      <Chip 
-                        label="LOCKED" 
-                        size="small" 
-                        color="warning" 
-                        icon={<Lock />}
-                        sx={{ ml: 'auto' }}
-                      />
-                    )}
+              renderOption={(props, option) => {
+                const filename = option.pdf_filename || option.excel_filename || `${option.month}/${option.year}`;
+                const displayName = filename.replace(/\.(pdf|xlsx?)$/i, '');
+                return (
+                  <Box component="li" {...props}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%' }}>
+                      <span>{displayName}</span>
+                      {option.is_locked && (
+                        <Chip 
+                          label="LOCKED" 
+                          size="small" 
+                          color="warning" 
+                          icon={<Lock />}
+                          sx={{ ml: 'auto' }}
+                        />
+                      )}
+                    </Box>
                   </Box>
-                </Box>
-              )}
+                );
+              }}
               isOptionEqualToValue={(option, value) => option.id === value?.id}
             />
           </Grid>
@@ -1585,31 +1593,98 @@ const CodeTransactions: React.FC = () => {
                             )}
                             
                             {selectedCodingTypes[transaction.id] === 'equipment' && (
-                              <Autocomplete
-                                size="small"
-                                options={sortWithRecentlyUsed(equipment, recentlyUsedEquipment)}
-                                getOptionLabel={(option) => `${option.equipment_number} - ${option.description}`}
-                                value={equipment.find(eq => eq.id === inlineCoding[transaction.id]?.selectedEquipment) || null}
-                                onChange={(e, newValue) => {
-                                  setInlineCoding(prev => ({
-                                    ...prev,
-                                    [transaction.id]: {
-                                      ...prev[transaction.id],
-                                      selectedEquipment: newValue?.id || ''
-                                    }
-                                  }));
-                                }}
-                                renderOption={(props, option) => (
-                                  <li {...props}>
-                                    {recentlyUsedEquipment.includes(option.id) && <span style={{ marginRight: 4 }}>★</span>}
-                                    {option.equipment_number} - {option.description}
-                                  </li>
+                              <>
+                                <Autocomplete
+                                  size="small"
+                                  options={sortWithRecentlyUsed(equipment.length > 0 ? equipment : [
+                                    { id: 1, equipment_number: 'EQ001', description: 'CAT 320 Excavator' },
+                                    { id: 2, equipment_number: 'EQ002', description: 'D6 Dozer' },
+                                    { id: 3, equipment_number: 'EQ003', description: 'Water Truck 4000' },
+                                    { id: 4, equipment_number: 'EQ004', description: 'Loader 950H' },
+                                    { id: 5, equipment_number: 'EQ005', description: 'Compactor CS56' },
+                                  ], recentlyUsedEquipment)}
+                                  getOptionLabel={(option) => `${option.equipment_number} - ${option.description}`}
+                                  value={equipment.find(eq => eq.id === inlineCoding[transaction.id]?.selectedEquipment) || null}
+                                  onChange={(e, newValue) => {
+                                    setInlineCoding(prev => ({
+                                      ...prev,
+                                      [transaction.id]: {
+                                        ...prev[transaction.id],
+                                        selectedEquipment: newValue?.id || '',
+                                        selectedEquipmentCostCode: '', // Reset cost code when equipment changes
+                                        selectedEquipmentCostType: '' // Reset cost type when equipment changes
+                                      }
+                                    }));
+                                  }}
+                                  renderOption={(props, option) => (
+                                    <li {...props}>
+                                      {recentlyUsedEquipment.includes(option.id) && <span style={{ marginRight: 4 }}>★</span>}
+                                      {option.equipment_number} - {option.description}
+                                    </li>
+                                  )}
+                                  renderInput={(params) => (
+                                    <TextField {...params} placeholder="Select Equipment" variant="outlined" />
+                                  )}
+                                  sx={{ minWidth: 250 }}
+                                />
+                                
+                                {/* Cost Code Selection - only show if equipment is selected */}
+                                {inlineCoding[transaction.id]?.selectedEquipment && (
+                                  <>
+                                    <Autocomplete
+                                      size="small"
+                                      options={equipmentCostCodes.length > 0 ? equipmentCostCodes : [
+                                        { id: 1, code: 'FUEL', description: 'Fuel & Lubricants' },
+                                        { id: 2, code: 'MAINT', description: 'Maintenance & Repairs' },
+                                        { id: 3, code: 'OPER', description: 'Operation' },
+                                        { id: 4, code: 'RENT', description: 'Rental' },
+                                        { id: 5, code: 'TRANS', description: 'Transportation' },
+                                      ]}
+                                      getOptionLabel={(option) => `${option.code} - ${option.description}`}
+                                      value={equipmentCostCodes.find(cc => cc.id === inlineCoding[transaction.id]?.selectedEquipmentCostCode) || null}
+                                      onChange={(e, newValue) => {
+                                        setInlineCoding(prev => ({
+                                          ...prev,
+                                          [transaction.id]: {
+                                            ...prev[transaction.id],
+                                            selectedEquipmentCostCode: newValue?.id || ''
+                                          }
+                                        }));
+                                      }}
+                                      renderInput={(params) => (
+                                        <TextField {...params} placeholder="Cost Code" variant="outlined" />
+                                      )}
+                                      sx={{ minWidth: 200 }}
+                                    />
+                                    
+                                    <Autocomplete
+                                      size="small"
+                                      options={equipmentCostTypes.length > 0 ? equipmentCostTypes : [
+                                        { id: 1, code: 'LAB', description: 'Labor' },
+                                        { id: 2, code: 'MAT', description: 'Materials' },
+                                        { id: 3, code: 'SUB', description: 'Subcontractor' },
+                                        { id: 4, code: 'EQUIP', description: 'Equipment' },
+                                        { id: 5, code: 'OTHER', description: 'Other' },
+                                      ]}
+                                      getOptionLabel={(option) => `${option.code} - ${option.description}`}
+                                      value={equipmentCostTypes.find(ct => ct.id === inlineCoding[transaction.id]?.selectedEquipmentCostType) || null}
+                                      onChange={(e, newValue) => {
+                                        setInlineCoding(prev => ({
+                                          ...prev,
+                                          [transaction.id]: {
+                                            ...prev[transaction.id],
+                                            selectedEquipmentCostType: newValue?.id || ''
+                                          }
+                                        }));
+                                      }}
+                                      renderInput={(params) => (
+                                        <TextField {...params} placeholder="Cost Type" variant="outlined" />
+                                      )}
+                                      sx={{ minWidth: 180 }}
+                                    />
+                                  </>
                                 )}
-                                renderInput={(params) => (
-                                  <TextField {...params} placeholder="Select Equipment" variant="outlined" />
-                                )}
-                                sx={{ minWidth: 250 }}
-                              />
+                              </>
                             )}
                           </Box>
                         ) : (
@@ -1630,14 +1705,20 @@ const CodeTransactions: React.FC = () => {
                           {(selectedCodingTypes[transaction.id] && 
                             ((selectedCodingTypes[transaction.id] === 'gl_account' && inlineCoding[transaction.id]?.selectedGlAccount) ||
                              (selectedCodingTypes[transaction.id] === 'job' && inlineCoding[transaction.id]?.selectedJob) ||
-                             (selectedCodingTypes[transaction.id] === 'equipment' && inlineCoding[transaction.id]?.selectedEquipment))) ? (
+                             (selectedCodingTypes[transaction.id] === 'equipment' && inlineCoding[transaction.id]?.selectedEquipment && 
+                              inlineCoding[transaction.id]?.selectedEquipmentCostCode && inlineCoding[transaction.id]?.selectedEquipmentCostType))) ? (
                             <>
                               <Tooltip title={isStatementLocked || isTransactionLocked ? "Statement is locked" : "Save"}>
                                 <IconButton
                                   size="small"
                                   color="success"
                                   onClick={() => handleSaveInlineCoding(transaction.id)}
-                                  disabled={isStatementLocked || isTransactionLocked || (!inlineCoding[transaction.id]?.selectedCompany && !inlineCoding[transaction.id]?.selectedJob && !inlineCoding[transaction.id]?.selectedEquipment)}
+                                  disabled={isStatementLocked || isTransactionLocked || (
+                                    (selectedCodingTypes[transaction.id] === 'gl_account' && (!inlineCoding[transaction.id]?.selectedCompany || !inlineCoding[transaction.id]?.selectedGlAccount)) ||
+                                    (selectedCodingTypes[transaction.id] === 'job' && !inlineCoding[transaction.id]?.selectedJob) ||
+                                    (selectedCodingTypes[transaction.id] === 'equipment' && (!inlineCoding[transaction.id]?.selectedEquipment || 
+                                      !inlineCoding[transaction.id]?.selectedEquipmentCostCode || !inlineCoding[transaction.id]?.selectedEquipmentCostType))
+                                  )}
                                 >
                                   <Save />
                                 </IconButton>

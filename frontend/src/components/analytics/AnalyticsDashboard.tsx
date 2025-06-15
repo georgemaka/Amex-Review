@@ -12,6 +12,7 @@ import MerchantTable from './MerchantTable';
 import CardholderComparison from './CardholderComparison';
 import AnomalyAlerts from './AnomalyAlerts';
 import AnalyticsFilters from './AnalyticsFilters';
+import BudgetManagement from './BudgetManagement';
 
 const AnalyticsDashboard: React.FC = () => {
   const dispatch = useDispatch<AppDispatch>();
@@ -19,15 +20,24 @@ const AnalyticsDashboard: React.FC = () => {
   const [selectedDate, setSelectedDate] = useState(new Date());
 
   useEffect(() => {
-    // Set initial filters to current month/year
-    const month = selectedDate.getMonth() + 1;
-    const year = selectedDate.getFullYear();
-    dispatch(setFilters({ month, year }));
+    // Set initial filters to current month
+    const now = new Date();
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
+    const startOfMonth = new Date(year, month - 1, 1);
+    const endOfMonth = new Date(year, month, 0);
+    
+    dispatch(setFilters({ 
+      date_from: startOfMonth.toISOString().split('T')[0],
+      date_to: endOfMonth.toISOString().split('T')[0],
+      month,
+      year 
+    }));
   }, []);
 
   useEffect(() => {
     // Fetch dashboard data when filters change
-    if (filters.month && filters.year) {
+    if ((filters.date_from && filters.date_to) || (filters.month && filters.year)) {
       dispatch(fetchAnalyticsDashboard(filters));
     }
   }, [dispatch, filters]);
@@ -139,6 +149,9 @@ const AnalyticsDashboard: React.FC = () => {
           </Grid>
         </>
       )}
+      
+      {/* Budget Management Floating Button */}
+      <BudgetManagement />
     </Box>
   );
 };

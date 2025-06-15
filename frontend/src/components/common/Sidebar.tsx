@@ -20,6 +20,10 @@ import {
   CreditCard,
   AdminPanelSettings,
   Analytics,
+  Notifications,
+  Email,
+  Assignment,
+  Template,
 } from '@mui/icons-material';
 import { RootState } from '../../store';
 
@@ -58,7 +62,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onDrawerToggle }) => {
       text: 'Analytics',
       icon: <Analytics />,
       path: '/analytics',
-      roles: ['admin', 'coder', 'reviewer', 'viewer'],
+      roles: ['admin', 'reviewer', 'viewer'],
     },
   ];
 
@@ -73,6 +77,30 @@ const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onDrawerToggle }) => {
       text: 'Cardholder Management',
       icon: <CreditCard />,
       path: '/admin/cardholders',
+      roles: ['admin'],
+    },
+    {
+      text: 'Assignments',
+      icon: <Assignment />,
+      path: '/admin/assignments',
+      roles: ['admin'],
+    },
+    {
+      text: 'Email Management',
+      icon: <Email />,
+      path: '/admin/emails',
+      roles: ['admin'],
+    },
+    {
+      text: 'Email Templates',
+      icon: <Template />,
+      path: '/admin/email-templates',
+      roles: ['admin'],
+    },
+    {
+      text: 'Alert Settings',
+      icon: <Notifications />,
+      path: '/admin/alerts',
       roles: ['admin'],
     },
   ];

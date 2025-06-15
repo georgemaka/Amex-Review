@@ -76,8 +76,11 @@ interface AnalyticsState {
   filters: {
     month?: number;
     year?: number;
+    date_from?: string;
+    date_to?: string;
     cardholder_id?: number;
     category_id?: number;
+    statement_id?: number;
   };
 }
 
@@ -96,7 +99,7 @@ const initialState: AnalyticsState = {
 // Async thunks
 export const fetchAnalyticsDashboard = createAsyncThunk(
   'analytics/fetchDashboard',
-  async (params: { month?: number; year?: number; cardholder_id?: number }) => {
+  async (params: { month?: number; year?: number; date_from?: string; date_to?: string; cardholder_id?: number; category_id?: number; statement_id?: number }) => {
     const response = await api.getAnalyticsDashboard(params);
     return response;
   }
@@ -104,7 +107,7 @@ export const fetchAnalyticsDashboard = createAsyncThunk(
 
 export const fetchCategorySpending = createAsyncThunk(
   'analytics/fetchCategorySpending',
-  async (params: { month?: number; year?: number; cardholder_id?: number }) => {
+  async (params: { month?: number; year?: number; cardholder_id?: number; statement_id?: number }) => {
     const response = await api.getSpendingByCategory(params);
     return response;
   }
@@ -112,7 +115,7 @@ export const fetchCategorySpending = createAsyncThunk(
 
 export const fetchMerchantSpending = createAsyncThunk(
   'analytics/fetchMerchantSpending',
-  async (params: { month?: number; year?: number; cardholder_id?: number; category_id?: number; limit?: number }) => {
+  async (params: { month?: number; year?: number; cardholder_id?: number; category_id?: number; statement_id?: number; limit?: number }) => {
     const response = await api.getSpendingByMerchant(params);
     return response;
   }
@@ -120,7 +123,7 @@ export const fetchMerchantSpending = createAsyncThunk(
 
 export const fetchSpendingTrends = createAsyncThunk(
   'analytics/fetchSpendingTrends',
-  async (params: { cardholder_id?: number; category_id?: number; months?: number }) => {
+  async (params: { cardholder_id?: number; category_id?: number; statement_id?: number; months?: number }) => {
     const response = await api.getSpendingTrends(params);
     return response;
   }
@@ -128,7 +131,7 @@ export const fetchSpendingTrends = createAsyncThunk(
 
 export const fetchCardholderSpending = createAsyncThunk(
   'analytics/fetchCardholderSpending',
-  async (params: { month?: number; year?: number }) => {
+  async (params: { month?: number; year?: number; statement_id?: number }) => {
     const response = await api.getSpendingByCardholder(params);
     return response;
   }

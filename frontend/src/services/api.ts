@@ -206,6 +206,13 @@ class ApiService {
     return response.data;
   }
 
+  async getCardholdersWithAssignments(params?: {
+    is_active?: boolean;
+  }) {
+    const response = await this.api.get('/cardholders/with-assignments', { params });
+    return response.data;
+  }
+
   async getCardholder(id: number) {
     const response = await this.api.get(`/cardholders/${id}`);
     return response.data;
@@ -235,7 +242,11 @@ class ApiService {
   async getAnalyticsDashboard(params?: {
     month?: number;
     year?: number;
+    date_from?: string;
+    date_to?: string;
     cardholder_id?: number;
+    category_id?: number;
+    statement_id?: number;
   }) {
     const response = await this.api.get('/analytics/dashboard', { params });
     return response.data;
@@ -245,6 +256,7 @@ class ApiService {
     month?: number;
     year?: number;
     cardholder_id?: number;
+    statement_id?: number;
   }) {
     const response = await this.api.get('/analytics/spending-by-category', { params });
     return response.data;
@@ -255,6 +267,7 @@ class ApiService {
     year?: number;
     cardholder_id?: number;
     category_id?: number;
+    statement_id?: number;
     limit?: number;
   }) {
     const response = await this.api.get('/analytics/spending-by-merchant', { params });
@@ -264,6 +277,7 @@ class ApiService {
   async getSpendingTrends(params?: {
     cardholder_id?: number;
     category_id?: number;
+    statement_id?: number;
     months?: number;
   }) {
     const response = await this.api.get('/analytics/spending-trends', { params });
@@ -273,6 +287,7 @@ class ApiService {
   async getSpendingByCardholder(params?: {
     month?: number;
     year?: number;
+    statement_id?: number;
   }) {
     const response = await this.api.get('/analytics/spending-by-cardholder', { params });
     return response.data;
@@ -344,6 +359,11 @@ class ApiService {
     const response = await this.api.post('/cardholders/import', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
+    return response.data;
+  }
+
+  async getMissingCardholders() {
+    const response = await this.api.get('/cardholders/missing');
     return response.data;
   }
 
@@ -420,6 +440,76 @@ class ApiService {
 
   async getEquipmentCostTypes() {
     const response = await this.api.get('/coding/equipment-cost-types');
+    return response.data;
+  }
+
+  // Admin endpoints
+  async getAlertConfig() {
+    const response = await this.api.get('/admin/alert-config');
+    return response.data;
+  }
+
+  async updateAlertConfig(config: any) {
+    const response = await this.api.put('/admin/alert-config', config);
+    return response.data;
+  }
+
+  // User assignment endpoints
+  async getUserAssignments(userId: number, role: string) {
+    const response = await this.api.get(`/users/${userId}/assignments`, { params: { role } });
+    return response.data;
+  }
+
+  async removeUserAssignment(assignmentId: number, role: string) {
+    const endpoint = role === 'coder' ? 'assignments' : 'reviewers';
+    const response = await this.api.delete(`/cardholders/${endpoint}/${assignmentId}`);
+    return response.data;
+  }
+
+  async addUserAssignment(userId: number, cardholderId: number, role: string) {
+    if (role === 'coder') {
+      const response = await this.api.post(`/cardholders/${cardholderId}/assignments`, {
+        coder_id: userId,
+        is_active: true
+      });
+      return response.data;
+    } else {
+      const response = await this.api.post(`/cardholders/${cardholderId}/reviewers`, {
+        reviewer_id: userId,
+        review_order: 1,
+        is_active: true
+      });
+      return response.data;
+    }
+  }
+
+  // Email endpoints
+  async sendGroupEmail(data: {
+    recipient_type: string;
+    specific_recipients?: string[];
+    statement_id?: number;
+    subject: string;
+    body: string;
+    attachments?: string[];
+    is_draft: boolean;
+  }) {
+    const response = await this.api.post('/emails/send-group', data);
+    return response.data;
+  }
+
+  async sendStatementNotification(data: {
+    statement_id: number;
+    recipient_type: string;
+    notification_type: string;
+    custom_message?: string;
+    is_draft: boolean;
+  }) {
+    const response = await this.api.post('/emails/statement-notification', data);
+    return response.data;
+  }
+
+  async getEmailConfig() {
+    const response = await this.api.get('/emails/email-config');
     return response.data;
   }
 
